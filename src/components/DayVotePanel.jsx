@@ -25,7 +25,9 @@ const buttonStyle = {
 
 // Suivi du débat, des nominations et des votes côté Conteur (partie multijoueur)
 function DayVotePanel({ dayVote, players, onExecutePlayer }) {
-  const { day, remaining, summary, open, voters } = dayVote;
+  const { day, remaining, summary, open, voter } = dayVote;
+  const yesIds = open ? open.order.filter((id) => open.votes[id] === true) : [];
+  const noIds = open ? open.order.filter((id) => open.votes[id] === false) : [];
   const name = (id) => players.find((p) => p.id === id)?.name ?? '?';
 
   return (
@@ -46,9 +48,20 @@ function DayVotePanel({ dayVote, players, onExecutePlayer }) {
       {open && (
         <>
           <div style={{ color: '#e8e0d5' }}>
-            {name(open.nominatorId)} nomine <strong>{name(open.nomineeId)}</strong> · {Object.keys(open.votes).length}/{voters} ont voté
+            {name(open.nominatorId)} nomine <strong>{name(open.nomineeId)}</strong>
           </div>
-          <button style={buttonStyle} onClick={dayVote.onCloseVote}>Clore le vote</button>
+          <div className="vote-tally" style={{ color: '#b8a88a', fontSize: '0.85rem' }}>
+            Oui : {yesIds.length > 0 ? yesIds.map(name).join(', ') : '—'} · Non : {noIds.length > 0 ? noIds.map(name).join(', ') : '—'}
+          </div>
+          {voter && (
+            <div className="vote-turn" data-voter={voter.name} style={{ color: '#fbbf24' }}>
+              Au tour de {voter.name}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: '0.4rem' }}>
+            {voter && <button style={{ ...buttonStyle, flex: 1 }} onClick={dayVote.onSkipVoter}>Passer (Non)</button>}
+            <button style={{ ...buttonStyle, flex: 1 }} onClick={dayVote.onCloseVote}>Clore le vote</button>
+          </div>
         </>
       )}
 

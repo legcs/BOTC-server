@@ -33,7 +33,7 @@ export const handleImpAction = ({
     }
 
     if (victim.id === actor.id) {
-      impSuicide({ players, actor, addNightEvent, actionKey, setPlayers });
+      impSuicide({ players, actor, addNightEvent, actionKey, setPlayers, ask });
       return;
     }
 
@@ -66,7 +66,7 @@ export const handleImpAction = ({
   strike(target);
 };
 
-const impSuicide = ({ players, actor, addNightEvent, actionKey, setPlayers }) => {
+const impSuicide = ({ players, actor, addNightEvent, actionKey, setPlayers, ask }) => {
   const aliveMinions = players.filter(p => p.alive && getRoleCategory(p.role) === 'minion');
 
   if (aliveMinions.length === 0) {
@@ -76,16 +76,31 @@ const impSuicide = ({ players, actor, addNightEvent, actionKey, setPlayers }) =>
     return;
   }
 
-  // La Confidente est prioritaire pour devenir le nouveau Démon
-  const heir = aliveMinions.find(p => p.role === 'scarletwoman') || pickRandom(aliveMinions);
-  setPlayers(prev => prev.map(p => {
-    if (p.id === actor.id) {
-      return { ...p, alive: false, role: 'dead', notes: appendNote(p.notes, '[Suicide]') };
-    }
-    if (p.id === heir.id) {
-      return { ...p, role: 'imp', notes: appendNote(p.notes, '[Transformé en Démon suite au suicide du démon]') };
-    }
-    return p;
-  }));
-  addNightEvent(`💀 Le Démon s'est suicidé, ${heir.name} devient le nouveau Démon !`, actionKey);
+  const crown = (heir) => {
+    setPlayers(prev => prev.map(p => {
+      if (p.id === actor.id) {
+        return { ...p, alive: false, role: 'dead', notes: appendNote(p.notes, '[Suicide]') };
+      }
+      if (p.id === heir.id) {
+        return { ...p, role: 'imp', notes: appendNote(p.notes, '[Transformé en Démon suite au suicide du démon]') };
+      }
+      return p;
+    }));
+    addNightEvent(`💀 Le Démon s'est suicidé, ${heir.name} devient le nouveau Démon !`, actionKey);
+  };
+
+  // La Confidente succède d'office si sa capacité s'applique (5 joueurs vivants ou plus avant la mort)
+  const scarletWoman = aliveMinions.find(p => p.role === 'scarletwoman' && canUseAbility(p));
+  if (scarletWoman && players.filter(p => p.alive).length >= 5) {
+    crown(scarletWoman);
+  } else if (aliveMinions.length === 1 || !ask) {
+    crown(aliveMinions.length === 1 ? aliveMinions[0] : pickRandom(aliveMinions));
+  } else {
+    // Sinon, le Conteur choisit le Sbire qui devient le Démon
+    ask({
+      title: 'Le Démon se suicide',
+      text: 'Choisissez le Sbire qui devient le nouveau Démon.',
+      options: aliveMinions.map(p => ({ label: p.name, run: () => crown(p) })),
+    });
+  }
 };

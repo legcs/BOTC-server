@@ -14,7 +14,7 @@ import { loadGame, saveGame } from './utils/storage';
 // Imports du mode multijoueur
 import { useRelay } from './multiplayer/useRelay';
 import { buildRelayState, EVIL_INFO_MIN_PLAYERS, INFO_ROLES, isMinion, pickDemonBluffs } from './multiplayer/views';
-import { canBeNominated, canNominate, canVote, canVoteYes, openNomination, voteSummary, voteThreshold, yesVoters } from './multiplayer/voting';
+import { canBeNominated, canNominate, canVoteYes, currentVoter, openNomination, voteOrder, voteSummary, voteThreshold, yesVoters } from './multiplayer/voting';
 
 // Imports des composants
 import VictoryModal from './components/VictoryModal';
@@ -99,6 +99,9 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
   const [spyGrimoire, setSpyGrimoire] = useState(saved?.spyGrimoire ?? null);
   // Décision demandée au Conteur en cours de résolution (ex. Maire attaqué de nuit)
   const [pendingChoice, setPendingChoice] = useState(null);
+  // États précédents de la partie, pour annuler la dernière action du Conteur
+  const [undoStack, setUndoStack] = useState([]);
+  const undoLock = useRef(false);
   // Multijoueur : discussion, joueurs connectés au salon
   const [chat, setChat] = useState([]);
   const [roster, setRoster] = useState([]);
@@ -223,7 +226,47 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     if (succession) addNightEvent(succession.event);
   };
 
+  // ----- Annulation -----
+  const pushUndo = (label) => {
+    // Une action qui en déclenche une autre (Vierge → exécution) ne compte que pour une
+    if (undoLock.current) return;
+    undoLock.current = true;
+    queueMicrotask(() => { undoLock.current = false; });
+    const state = {
+      players: playersRef.current, day: dayRef.current, currentTime, currentNight, nightLog, completedActions,
+      isStarted, executionToday, lastExecutedPlayerId, killedTonightId, deadAtNightStart, spyGrimoire, forcedEnd,
+    };
+    setUndoStack(stack => [...stack.slice(-19), { label, state }]);
+  };
+
+  const undo = () => {
+    const last = undoStack.at(-1);
+    if (!last) return;
+    const { state } = last;
+    playersRef.current = state.players;
+    setPlayersState(state.players);
+    dayRef.current = state.day;
+    setDayState(state.day);
+    setCurrentTime(state.currentTime);
+    setCurrentNight(state.currentNight);
+    setNightLog(state.nightLog);
+    setCompletedActions(state.completedActions);
+    setIsStarted(state.isStarted);
+    setExecutionToday(state.executionToday);
+    setLastExecutedPlayerId(state.lastExecutedPlayerId);
+    setKilledTonightId(state.killedTonightId);
+    setDeadAtNightStart(state.deadAtNightStart);
+    setSpyGrimoire(state.spyGrimoire);
+    setForcedEnd(state.forcedEnd);
+    setDismissedFor(null);
+    setPendingChoice(null);
+    cancelAction();
+    setUndoStack(stack => stack.slice(0, -1));
+  };
+
   const updatePlayer = (playerId, updates) => {
+    // Les notes se tapent caractère par caractère : elles ne s'annulent pas
+    if (!('notes' in updates)) pushUndo(`Modification de ${playersRef.current.find(p => p.id === playerId)?.name ?? 'un joueur'}`);
     const changes = { ...updates };
     if ('role' in updates) {
       // Le Soûlard reçoit un rôle de Villageois absent de la partie, qu'il croit avoir
@@ -259,28 +302,50 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     const nominee = playersRef.current.find(p => p.id === nomineeId);
     if (!canNominate(nominator, dayRef.current) || !canBeNominated(nominee, dayRef.current)) return;
 
+    const openVote = () => {
+      setDay(d => ({
+        ...d,
+        nominations: [...d.nominations, {
+          id: d.nominations.length + 1,
+          nominatorId: nominator.id,
+          nomineeId,
+          votes: {},
+          order: voteOrder(playersRef.current, nomineeId),
+          open: true,
+          threshold: voteThreshold(playersRef.current),
+        }],
+      }));
+      addNightEvent(`🗳️ ${nominator.name} nomine ${nominee.name}`);
+    };
+
     // Première nomination de la Vierge : sa capacité est dépensée, et un nominateur Villageois est exécuté
     if (holdsRole(nominee, 'virgin') && nominee.alive && !nominee.used) {
-      const triggers = virginTriggers(nominee, nominator);
-      setPlayers(prev => prev.map(p => (p.id === nominee.id ? { ...p, used: true } : p)));
-      if (triggers) {
-        addNightEvent(`🕊️ ${nominator.name} nomine ${nominee.name} (Vierge) : Villageois, il est exécuté sur-le-champ`);
-        executePlayer(nominator.id);
+      const settle = (triggers) => {
+        setPlayers(prev => prev.map(p => (p.id === nominee.id ? { ...p, used: true } : p)));
+        if (triggers) {
+          addNightEvent(`🕊️ ${nominator.name} nomine ${nominee.name} (Vierge) : Villageois, il est exécuté sur-le-champ`);
+          executePlayer(nominator.id);
+        } else {
+          openVote();
+        }
+      };
+      // Un Espion peut être vu comme un Villageois : le Conteur en décide
+      if (nominator.role === 'spy' && nominee.role === 'virgin' && canUseAbility(nominee)) {
+        setPendingChoice({
+          title: `${nominator.name} (Espion) nomine la Vierge`,
+          text: 'L\'Espion peut être vu comme un Villageois.',
+          options: [
+            { label: 'Pas un Villageois', run: () => settle(false) },
+            { label: 'Vu comme un Villageois', run: () => settle(true) },
+          ],
+        });
         return;
       }
+      settle(virginTriggers(nominee, nominator));
+      return;
     }
-    setDay(d => ({
-      ...d,
-      nominations: [...d.nominations, {
-        id: d.nominations.length + 1,
-        nominatorId: nominator.id,
-        nomineeId,
-        votes: {},
-        open: true,
-        threshold: voteThreshold(playersRef.current),
-      }],
-    }));
-    addNightEvent(`🗳️ ${nominator.name} nomine ${nominee.name}`);
+
+    openVote();
   };
 
   const closeVote = () => {
@@ -299,15 +364,30 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
 
   const castVote = (voter, value) => {
     const open = openNomination(dayRef.current);
-    if (!open || !canVote(voter) || voter.id in open.votes) return;
+    // On vote à tour de rôle : seul le joueur dont c'est le tour peut se prononcer
+    if (!open || currentVoter(open, playersRef.current)?.id !== voter?.id) return;
     if (value && !canVoteYes(voter, playersRef.current, open)) return;
     setDay(d => ({
       ...d,
       nominations: d.nominations.map(n => (n.id === open.id ? { ...n, votes: { ...n.votes, [voter.id]: value } } : n)),
     }));
-    // Le vote se clôt de lui-même quand tous les joueurs connectés se sont prononcés
-    const votes = openNomination(dayRef.current).votes;
-    if (playersRef.current.filter(p => p.key && canVote(p)).every(p => p.id in votes)) closeVote();
+    // Le vote se clôt de lui-même à la fin du tour de table
+    if (!currentVoter(openNomination(dayRef.current), playersRef.current)) closeVote();
+  };
+
+  // Le Conteur passe le tour d'un joueur absent ou trop lent : il ne vote pas pour l'exécution
+  const skipVoter = () => {
+    const open = openNomination(dayRef.current);
+    const voter = open && currentVoter(open, playersRef.current);
+    if (voter) castVote(voter, false);
+  };
+
+  // Le Conteur déconnecte un joueur du salon en cours de partie : son personnage reste en jeu
+  const disconnectPlayer = (playerId) => {
+    const player = playersRef.current.find(p => p.id === playerId);
+    if (!player?.key) return;
+    relay.send({ t: 'kick', key: player.key });
+    setPlayers(prev => prev.map(p => (p.id === playerId ? { ...p, key: null } : p)));
   };
 
   const addPlayer = () => {
@@ -335,6 +415,7 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     const current = playersRef.current;
     const player = current.find(p => p.id === playerId);
     if (!player) return;
+    pushUndo(`Exécution de ${player.name}`);
 
     setExecutionToday(true);
     setLastExecutedPlayerId(playerId);
@@ -365,6 +446,7 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
   };
 
   const skipExecution = () => {
+    pushUndo('Journée sans exécution');
     addNightEvent('⏭️ Pas d\'exécution aujourd\'hui');
     setLastExecutedPlayerId(null);
 
@@ -419,6 +501,7 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
   };
 
   const startNewDay = () => {
+    pushUndo('Lever du jour');
     setExecutionToday(false);
     setLastExecutedPlayerId(null);
     setIsStarted(true);
@@ -460,6 +543,7 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     const bluffs = pickDemonBluffs(assigned, shuffleArray);
     setDemonBluffs(bluffs);
     setBluffShares({});
+    setUndoStack([]);
     setEvilInfo(evilInfoOf(assigned));
     setSpyGrimoire(null);
 
@@ -484,6 +568,7 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     setEvilInfo(null);
     setSpyGrimoire(null);
     setPendingChoice(null);
+    setUndoStack([]);
     setForcedEnd(null);
     setDismissedFor(null);
     setSelectedPlayerId(null);
@@ -545,6 +630,7 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
   };
 
   const runRoleAction = (role, action, actionKey, targets = []) => {
+    pushUndo(action);
     const handler = roleHandlers[role];
     if (!handler) {
       addNightEvent(`${action}`, actionKey);
@@ -726,9 +812,10 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     remaining: day.endsAt ? day.endsAt - now : 0,
     summary: voteSummary(day, players),
     open: openNomination(day),
-    voters: players.filter(canVote).length,
+    voter: openNomination(day) ? currentVoter(openNomination(day), players) : null,
     onOpenNominations: openNominations,
     onCloseVote: closeVote,
+    onSkipVoter: skipVoter,
   } : null;
 
   const multiplayer = session ? {
@@ -780,6 +867,8 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
         isStarted={isStarted}
         multiplayer={multiplayer}
         onQuit={onQuit}
+        undoLabel={undoStack.at(-1)?.label ?? null}
+        onUndo={undo}
       />
 
       <main className="main-layout" style={{
@@ -817,6 +906,8 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
           setSelectedPlayerId={setSelectedPlayerId}
           roleAssigned={roleAssigned}
           roleLocked={isStarted}
+          onlineKeys={session ? roster.filter(p => p.online).map(p => p.key) : null}
+          onDisconnectPlayer={session ? disconnectPlayer : null}
           multiplayer={!!session}
           room={session?.room ?? null}
         />

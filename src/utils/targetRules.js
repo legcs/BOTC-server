@@ -1,5 +1,5 @@
 import { canUseAbility } from './gameLogic';
-import { seenCategory } from './roleUtils';
+import { getRoleCategory, seenCategory } from './roleUtils';
 
 // Lavandière, Libraire, Enquêteur : le Conteur montre deux joueurs, dont l'un a le rôle annoncé
 const STARTING_INFO = {
@@ -15,7 +15,11 @@ export const getTargetError = (role, targets, actor) => {
   if (targets.some(t => t.id === actor?.id)) return 'Montrez deux autres joueurs que lui-même.';
   // Empoisonné ou ivre, il reçoit une information fausse : n'importe quels joueurs conviennent
   if (!canUseAbility(actor)) return null;
-  if (!targets.some(t => seenCategory(t) === rule.category)) return `L'un des deux joueurs doit être ${rule.label}.`;
+  // Un Ermite peut passer pour un Sbire, un Espion pour un Villageois ou un Étranger
+  const canPass = (t) => (rule.category === 'minion' ? t.role === 'recluse' : t.role === 'spy');
+  if (!targets.some(t => getRoleCategory(t.role) === rule.category || canPass(t))) {
+    return `L'un des deux joueurs doit être ${rule.label}.`;
+  }
   return null;
 };
 

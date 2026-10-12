@@ -405,6 +405,7 @@ export default function PlayerApp({ room }) {
                   </div>
                   {ballot?.canVote && (
                     <>
+                      <div className="my-turn" style={{ color: '#4ade80', fontWeight: 600 }}>C'est à vous de voter.</div>
                       {ballot.master && (
                         <div className="master-vote" style={{ color: '#b794f4', fontSize: '0.85rem' }}>
                           Votre Maître, {nameOf(ballot.master.id)}, {ballot.master.vote === null ? 'n\'a pas encore voté' : `a voté ${ballot.master.vote ? 'Oui' : 'Non'}`} : vous ne pouvez voter « Oui » que s'il l'a fait.
@@ -429,10 +430,15 @@ export default function PlayerApp({ room }) {
                   {ballot && ballot.myVote !== null && (
                     <div className="my-vote" style={{ color: '#d8d0c5' }}>Vous avez voté {ballot.myVote ? 'Oui' : 'Non'}.</div>
                   )}
-                  {ballot && !ballot.canVote && ballot.myVote === null && (
+                  {ballot?.ghost === 'used' && (
                     <div className="no-vote" style={{ color: '#b8a88a', fontSize: '0.85rem' }}>Vous avez déjà utilisé votre vote de mort.</div>
                   )}
-                  <div style={{ color: '#b8a88a', fontSize: '0.85rem' }}>{day.open.voted.length}/{day.open.voters} ont voté · {day.threshold} voix nécessaires</div>
+                  {day.open.voterId !== null && !ballot?.canVote && (
+                    <div className="vote-turn" style={{ color: '#d8d0c5' }}>Au tour de {nameOf(day.open.voterId)} de voter.</div>
+                  )}
+                  <div className="vote-tally" style={{ color: '#b8a88a', fontSize: '0.85rem' }}>
+                    Oui : {day.open.yes.length > 0 ? day.open.yes.map(nameOf).join(', ') : '—'} · Non : {day.open.no.length > 0 ? day.open.no.map(nameOf).join(', ') : '—'} · {day.threshold} voix nécessaires
+                  </div>
                 </>
               )}
 
@@ -554,8 +560,11 @@ export default function PlayerApp({ room }) {
             <h2 style={titleStyle}>Discussion</h2>
             <ChatPanel
               messages={chat}
-              selfId={seat.key}
-              recipients={[{ id: 'host', label: 'Conteur (privé)' }]}
+              recipients={[
+                { id: 'host', label: 'Conteur (privé)' },
+                // Chuchoter à un autre joueur, comme un aparté autour de la table (le jour seulement)
+                ...players.filter((p) => p.id !== view?.id).map((p) => ({ id: `p:${p.id}`, label: `${p.name} (chuchoter)`, dayOnly: true })),
+              ]}
               publicOpen={pub?.chatOpen ?? true}
               onSend={(to, text) => relay.send({ t: 'chat', to, text })}
             />

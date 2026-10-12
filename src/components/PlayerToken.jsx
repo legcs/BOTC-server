@@ -4,6 +4,7 @@ import { getRoleCategory, getCategoryColor, getRoleName } from '../utils/roleUti
 
 function PlayerToken({
   player,
+  online = null,
   totalPlayers,
   onSelect,
   isSelected,
@@ -196,6 +197,18 @@ function PlayerToken({
         )}
       </div>
 
+      {/* Multijoueur : le joueur est-il connecté au salon ? */}
+      {online !== null && (
+        <div
+          className={`presence ${online ? 'presence-online' : 'presence-offline'}`}
+          title={online ? 'Connecté' : 'Déconnecté'}
+          style={{
+            position: 'absolute', top: 2, left: 2, width: 12, height: 12, borderRadius: '50%',
+            background: online ? '#4ade80' : '#666', border: '2px solid #0d0d1a', pointerEvents: 'none', zIndex: 2,
+          }}
+        />
+      )}
+
       {/* Nom du joueur (en dessous du token) */}
       <div style={{
         position: 'absolute',
@@ -214,8 +227,8 @@ function PlayerToken({
         {player.name}
       </div>
 
-      {/* Ce que le Conteur doit garder en tête : rôle cru par le Soûlard, rôle sous lequel on est vu */}
-      {(player.shownRole || player.seenAs) && (
+      {/* Ce que le Conteur doit garder en tête : le rôle que le Soûlard croit avoir */}
+      {player.shownRole && (
         <div className="token-note" style={{
           position: 'absolute',
           top: tokenSize + 24,
@@ -225,7 +238,7 @@ function PlayerToken({
           whiteSpace: 'nowrap',
           pointerEvents: 'none',
         }}>
-          {player.shownRole ? `croit être ${getRoleName(player.shownRole)}` : `vu comme ${getRoleName(player.seenAs)}`}
+          croit être {getRoleName(player.shownRole)}
         </div>
       )}
     </div>

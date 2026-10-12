@@ -18,20 +18,14 @@ export const holdsRole = (player, roleId) =>
   player.role === roleId || (player.role === 'drunk' && player.shownRole === roleId);
 
 // Rôle sous lequel un joueur est vu par les capacités des autres. L'Ermite peut être vu comme
-// Sbire ou Démon, l'Espion comme Villageois ou Étranger : le Conteur le règle sur la fiche du joueur.
+// Sbire ou Démon, l'Espion comme Villageois ou Étranger : le Conteur en décide à chaque détection
+// (`seenAs` est posé le temps de résoudre la capacité, voir components/roles/storyteller.js).
 export const seenRole = (player) => {
   if ((player.role === 'recluse' || player.role === 'spy') && player.seenAs) return player.seenAs;
   return player.role === 'dead' ? 'imp' : player.role;
 };
 export const seenCategory = (player) => getRoleCategory(seenRole(player));
 export const seenAsEvil = (player) => isEvilRole(seenRole(player));
-
-// Rôles sous lesquels le Conteur peut faire passer un Ermite ou un Espion
-export const seenAsOptions = (roleId) => {
-  if (roleId === 'recluse') return [...roles.minions, ...roles.demons.filter(r => r.id === 'imp')];
-  if (roleId === 'spy') return [...roles.townsfolk.filter(r => r.id !== 'unknown'), ...roles.outsiders];
-  return [];
-};
 
 // Le Démon d'origine garde le rôle 'dead' après une succession : on l'affiche comme Démon
 export const getRoleName = (roleId) => {

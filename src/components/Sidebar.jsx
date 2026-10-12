@@ -116,7 +116,7 @@ function Sidebar({
             </div>
             <ChatPanel
               messages={multiplayer.chat}
-              selfId="host"
+              viewer="host"
               recipients={multiplayer.recipients}
               onSend={multiplayer.onSendChat}
             />

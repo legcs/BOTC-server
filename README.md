@@ -84,7 +84,7 @@ Au lancement, le Conteur choisit son mode de jeu. La partie locale correspond à
 
 ### Côté Conteur
 
-Le Conteur garde le grimoire complet et mène la partie comme en local. Le code du salon s'affiche en haut de l'écran ; un clic dessus copie le lien d'invitation. Chaque joueur qui rejoint le salon prend place dans le cercle (il n'y a pas d'ajout manuel dans ce mode), et un onglet « Discussion » s'ajoute au journal.
+Le Conteur garde le grimoire complet et mène la partie comme en local. Le code du salon s'affiche en haut de l'écran ; un clic dessus copie le lien d'invitation. Chaque joueur qui rejoint le salon prend place dans le cercle (il n'y a pas d'ajout manuel dans ce mode), et un onglet « Discussion » s'ajoute au journal. Une pastille sur chaque jeton indique si le joueur est connecté, et la fiche d'un joueur permet de le déconnecter du salon en cours de partie : son personnage reste en jeu.
 
 ![Le grimoire du Conteur en multijoueur](Documentation/screenshots/12-multi-conteur.jpg)
 
@@ -106,7 +106,7 @@ Les droits suivent les règles du jeu :
 
 - **Capacités** : quand le Conteur réveille un rôle qui doit désigner des joueurs, la demande apparaît sur l'écran du joueur concerné. Il touche ses cibles, vivantes ou mortes, et valide ; le Conteur confirme et l'application résout la capacité. Pour la Lavandière, le Libraire et l'Enquêteur, c'est le Conteur qui désigne les deux joueurs : le joueur apprend seulement que l'un des deux a tel rôle.
 - **Morts de la nuit** : elles restent secrètes jusqu'au lever du jour. Les exécutions sont visibles immédiatement.
-- **Discussion** : ouverte à tous le jour. La nuit, un joueur ne peut écrire qu'au Conteur, en privé ; le Conteur peut répondre en privé à n'importe quel joueur.
+- **Discussion** : ouverte à tous le jour, où deux joueurs peuvent aussi se chuchoter en privé, comme un aparté autour de la table. La nuit, un joueur ne peut écrire qu'au Conteur. Le Conteur voit tous les messages, chuchotements compris, et peut écrire en privé à n'importe quel joueur.
 - **Bluffs** : le Démon voit ses trois bluffs et transmet ceux de son choix à chaque Sbire, d'un clic ; il peut les reprendre. Comme dans le jeu, les Sbires ne reçoivent rien d'office. Le Conteur retrouve les trois bluffs dans son journal.
 - **Fin de partie** : le vainqueur et tous les rôles sont révélés à tout le monde.
 
@@ -116,12 +116,12 @@ Avant de lancer la partie, le Conteur règle la **durée du débat** (en minutes
 
 1. **Débat** : un compte à rebours identique s'affiche chez tout le monde. À son terme, les nominations s'ouvrent d'elles-mêmes ; le Conteur peut aussi les ouvrir plus tôt.
 2. **Nomination** : un joueur vivant touche le joueur qu'il accuse puis « Nominer ». Chacun ne peut nominer qu'une fois par jour, et un joueur ne peut être nominé qu'une fois par jour.
-3. **Vote** : tous les joueurs répondent « Oui » ou « Non » sur leur écran. Les voix restent secrètes jusqu'à la clôture, qui a lieu quand tout le monde a voté ou quand le Conteur clôt le vote.
+3. **Vote** : on vote à tour de rôle et à découvert, comme les mains levées autour de la table. Le tour part du voisin du nominé et se termine par le nominé ; chacun répond « Oui » ou « Non » quand vient son tour, et tout le monde voit les voix au fur et à mesure. Le Conteur peut passer le tour d'un joueur absent (il compte « Non ») ou clore le vote.
 4. **Résultat** : il faut au moins la moitié des vivants pour condamner un joueur, et celui qui réunit le plus de voix l'emporte ; en cas d'égalité, personne n'est condamné. Le Conteur exécute le condamné d'un clic, ou passe à la nuit sans exécution.
 
 Un joueur mort ne nomine plus (mais peut être nominé) et ne dispose que d'un seul vote pour le reste de la partie : il le dépense en votant « Oui ». Son jeton de vote reste visible de tous tant qu'il ne l'a pas dépensé.
 
-Deux rôles modifient le vote. Le **Majordome** ne peut voter « Oui » qu'après son Maître, dont il est le seul à voir le vote avant la clôture. La **Vierge**, nominée pour la première fois par un Villageois, le fait exécuter sur-le-champ : il n'y a pas de vote et la journée s'arrête.
+Deux rôles modifient le vote. Le **Majordome** ne peut voter « Oui » que si son Maître l'a fait avant lui. La **Vierge**, nominée pour la première fois par un Villageois, le fait exécuter sur-le-champ : il n'y a pas de vote et la journée s'arrête.
 
 ![Vote sur l'écran d'un joueur](Documentation/screenshots/16-multi-vote.jpg)
 
@@ -141,10 +141,11 @@ Le Démon, lui, connaît son Sbire et reçoit ses trois bluffs, qu'il peut lui t
 - Le salon se ferme dès que les rôles sont distribués : plus personne ne peut rejoindre la partie. Un joueur déjà installé, ou le Conteur, qui recharge sa page ou perd sa connexion retrouve sa place.
 - Un joueur retiré du cercle par le Conteur est déconnecté et en est informé sur son écran.
 - La partie tourne dans le navigateur du Conteur, qui calcule ce que chaque joueur a le droit de voir. Le serveur relaie ces vues, sans jamais envoyer le grimoire complet à un joueur.
-- Les salons sont gardés en mémoire : ils disparaissent si le serveur redémarre.
+- Les salons sont enregistrés sur le disque du serveur (`server/data/rooms.json`, ou le fichier indiqué par `ROOMS_FILE`) : un redémarrage ne coupe pas la partie, le Conteur et les joueurs se reconnectent d'eux-mêmes. En développement (`npm run dev`), les salons restent en mémoire.
 - Le Conteur garde la possibilité d'exécuter n'importe quel joueur sans vote.
-- Ermite et Espion : le Conteur règle sur leur fiche le rôle sous lequel les autres capacités les voient (« Vu par les autres comme »). Ce réglage vaut jusqu'à ce qu'il le change ; il n'est pas demandé à chaque détection.
-- Une information fausse (joueur empoisonné, ivre ou Soûlard) est tirée au hasard par l'application : le Conteur ne la choisit pas.
+- Ermite et Espion : chaque fois qu'une capacité les détecte, l'application demande au Conteur comment ils sont vus (gentil ou maléfique, Démon ou non, ou sous quel rôle).
+- Joueur empoisonné, ivre ou Soûlard : le Conteur choisit l'information qu'il reçoit parmi les réponses possibles, la vraie étant signalée. Le joueur n'en sait rien.
+- Suicide du Démon : la Confidente lui succède d'office si sa capacité s'applique ; sinon le Conteur choisit le Sbire qui devient le Démon.
 
 ## Fonctionnalités
 
@@ -157,6 +158,7 @@ Le Démon, lui, connaît son Sbire et reçoit ses trois bluffs, qu'il peut lui t
 - **Conditions de victoire** : détection de la fin de partie et annonce du camp vainqueur.
 - **Aide intégrée** : rappel des règles, des rôles et de l'ordre de nuit.
 - **Sauvegarde automatique** : la partie est conservée dans le navigateur (`localStorage`) et survit à un rechargement de la page.
+- **Annulation** : le bouton « ↩ Annuler » défait la dernière action du Conteur (exécution, capacité résolue, lever du jour, modification d'un joueur), jusqu'à 20 actions en arrière.
 - **Mode plein écran** et alternance visuelle jour / nuit.
 - **Multijoueur** : salon à rejoindre par code ou par lien, vue de chaque joueur selon son rôle, choix des cibles sur son propre écran, débat chronométré, nominations et votes sur les écrans, discussion publique et privée.
 
@@ -207,7 +209,8 @@ Le script `tests/e2e.mjs` démarre son propre serveur Vite, puis :
 - joue une partie complète à 8 joueurs, de l'ajout des joueurs à la victoire, en vérifiant l'état du grimoire à chaque étape ;
 - vérifie les règles une par une à partir de parties préparées : les 22 rôles de *Trouble Brewing*, dont le Soûlard, la Vierge, l'Ermite et l'Espion « vus comme », le Maire attaqué de nuit, le poison et les conditions de victoire ;
 - contrôle la répartition des rôles de 5 à 15 joueurs, la sauvegarde après rechargement et l'affichage sur téléphone ;
-- joue une partie multijoueur avec 9 navigateurs (un Conteur et 8 joueurs) : synchronisation, vue de chaque rôle, choix des cibles, débat chronométré, nominations et votes, vote unique des morts, discussion publique et privée, secret des morts de nuit, reconnexion ;
+- joue une partie multijoueur avec 9 navigateurs (un Conteur et 8 joueurs) : synchronisation, vue de chaque rôle, choix des cibles, débat chronométré, nominations et vote à tour de rôle, vote unique des morts, discussion publique, privée et chuchotements, secret des morts de nuit, reconnexion ;
+- redémarre un serveur en cours de partie pour vérifier que le salon, les joueurs et la discussion sont retrouvés ;
 - régénère les captures d'écran de ce README dans `Documentation/screenshots/`.
 
 Le tirage des rôles utilise une graine fixe, donc la partie jouée et les captures sont reproductibles. `SEED=41 npm run test:e2e` joue une autre distribution.

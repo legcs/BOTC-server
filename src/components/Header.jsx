@@ -13,6 +13,8 @@ function Header({
   isStarted,
   multiplayer = null,
   onQuit,
+  undoLabel = null,
+  onUndo,
 }) {
   const buttonStyle = {
     background: 'linear-gradient(135deg, #2d1f3d 0%, #1a1a2e 100%)',
@@ -103,6 +105,12 @@ function Header({
               {multiplayer.room
                 ? `Salon ${multiplayer.room}${{ online: '', closed: ' (ouvert dans un autre onglet)' }[multiplayer.status] ?? ' (reconnexion…)'}`
                 : 'Connexion…'}
+            </button>
+          )}
+
+          {undoLabel && (
+            <button className='btn btn-undo' onClick={onUndo} title={`Annuler : ${undoLabel}`} style={buttonStyle}>
+              ↩ Annuler
             </button>
           )}
 

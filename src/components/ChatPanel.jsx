@@ -1,16 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 // Discussion d'une partie multijoueur, côté Conteur comme côté joueur.
-// `selfId` vaut 'host' pour le Conteur, la clé du joueur sinon.
-function ChatPanel({ messages, selfId, recipients, publicOpen = true, onSend }) {
+// Un destinataire marqué `dayOnly` (chuchotement entre joueurs) n'est joignable que le jour.
+function ChatPanel({ messages, recipients, viewer = 'player', publicOpen = true, onSend }) {
   const [text, setText] = useState('');
   const [to, setTo] = useState('all');
   const listRef = useRef(null);
 
-  const options = [{ id: 'all', label: publicOpen ? 'Tout le monde' : 'Tout le monde (fermé la nuit)' }, ...recipients];
-  // La discussion publique fermée, un joueur ne peut plus écrire qu'au Conteur
-  const target = to === 'all' && !publicOpen ? recipients[0]?.id ?? 'all' : to;
-  const canSend = text.trim() !== '' && (target !== 'all' || publicOpen);
+  const options = [
+    { id: 'all', label: publicOpen ? 'Tout le monde' : 'Tout le monde (fermé la nuit)', dayOnly: true },
+    ...recipients,
+  ];
+  const reachable = (option) => !!option && (publicOpen || !option.dayOnly);
+  // La discussion fermée, un joueur ne peut plus écrire qu'au Conteur
+  const chosen = options.find((o) => o.id === to);
+  const target = reachable(chosen) ? to : options.find(reachable)?.id ?? 'all';
+  const canSend = text.trim() !== '' && reachable(options.find((o) => o.id === target));
 
   useEffect(() => {
     const list = listRef.current;
@@ -24,8 +29,6 @@ function ChatPanel({ messages, selfId, recipients, publicOpen = true, onSend }) 
     setText('');
   };
 
-  const label = (id) => (id === 'host' ? 'Conteur' : recipients.find((r) => r.id === id)?.label ?? 'joueur');
-
   return (
     <div className="chat-panel" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <div
@@ -37,8 +40,8 @@ function ChatPanel({ messages, selfId, recipients, publicOpen = true, onSend }) 
           <p style={{ color: '#777', fontStyle: 'italic', textAlign: 'center', margin: '0.5rem 0' }}>Aucun message</p>
         )}
         {messages.map((m) => {
-          const mine = m.from === selfId;
-          const isPrivate = m.to !== 'all';
+          const { mine } = m;
+          const isPrivate = m.private;
           return (
             <div
               key={m.id}
@@ -52,10 +55,10 @@ function ChatPanel({ messages, selfId, recipients, publicOpen = true, onSend }) 
                 wordBreak: 'break-word',
               }}
             >
-              <strong style={{ color: m.from === 'host' ? '#c9a55c' : '#4a9eff' }}>{mine ? 'Vous' : m.name}</strong>
+              <strong style={{ color: m.fromHost ? '#c9a55c' : '#4a9eff' }}>{mine ? 'Vous' : m.name}</strong>
               {isPrivate && (
                 <span style={{ color: '#b794f4', fontSize: '0.75rem' }}>
-                  {' '}(privé{mine ? ` → ${label(m.to)}` : ''})
+                  {' '}(privé{mine || (m.toName && m.toName !== 'Conteur' && !m.fromHost && viewer === 'host') ? ` → ${m.toName}` : ''})
                 </span>
               )}
               <span style={{ color: '#d8d0c5' }}> : {m.text}</span>
@@ -75,7 +78,7 @@ function ChatPanel({ messages, selfId, recipients, publicOpen = true, onSend }) 
           }}
         >
           {options.map((o) => (
-            <option key={o.id} value={o.id} disabled={o.id === 'all' && !publicOpen}>{o.label}</option>
+            <option key={o.id} value={o.id} disabled={!reachable(o)}>{o.label}</option>
           ))}
         </select>
         <div style={{ display: 'flex', gap: '0.4rem' }}>

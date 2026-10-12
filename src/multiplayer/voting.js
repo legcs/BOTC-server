@@ -1,5 +1,6 @@
 // Règles du vote de la journée (Blood on the Clocktower) :
 // - chaque joueur vivant peut nominer une fois par jour, chaque joueur ne peut être nominé qu'une fois ;
+// - on vote à tour de rôle et à découvert, en partant du voisin du nominé, qui vote en dernier ;
 // - tous les vivants votent ; un mort ne dispose que d'un seul vote pour le reste de la partie ;
 // - il faut au moins la moitié des vivants pour être condamné, et le plus de voix l'emporte ;
 // - en cas d'égalité en tête, personne n'est exécuté.
@@ -17,6 +18,17 @@ export const canVoteYes = (player, players, nomination) => {
   const master = butlerMaster(player, players);
   return !master || nomination.votes[master.id] === true;
 };
+
+// Ordre du tour de table : du voisin du nominé jusqu'au nominé lui-même
+export const voteOrder = (players, nomineeId) => {
+  const index = players.findIndex((p) => p.id === nomineeId);
+  return [...players.slice(index + 1), ...players.slice(0, index + 1)].map((p) => p.id);
+};
+
+// Joueur dont c'est le tour de voter (null quand le tour de table est terminé)
+export const currentVoter = (nomination, players) => nomination.order
+  .map((id) => players.find((p) => p.id === id))
+  .find((p) => p && canVote(p) && !(p.id in nomination.votes)) ?? null;
 
 export const openNomination = (day) => day?.nominations.find((n) => n.open) ?? null;
 

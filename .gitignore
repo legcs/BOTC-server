@@ -37,3 +37,6 @@ coverage
 * copy.*
 *.bak
 *.orig
+
+# Salons multijoueur sauvegardés par le serveur
+server/data

@@ -34,6 +34,8 @@ function GrimoireSection({
     roleAssigned,
     room = null,
     roleLocked = false,
+    onlineKeys = null,
+    onDisconnectPlayer = null,
     multiplayer = false,
 }) {
     const selectedPlayer = players.find(p => p.id === selectedPlayerId);
@@ -150,6 +152,7 @@ function GrimoireSection({
                     <PlayerToken
                         key={player.id}
                         player={player}
+                        online={onlineKeys && player.key ? onlineKeys.includes(player.key) : null}
                         totalPlayers={players.length}
                         onSelect={activeAction ? handleTokenClickDuringAction : (id) => setSelectedPlayerId(id === selectedPlayerId ? null : id)}
                         isSelected={player.id === selectedPlayerId && !activeAction}
@@ -298,6 +301,7 @@ function GrimoireSection({
                     style={{ /* positionnement */ }}
                     roleAssigned={roleAssigned}
                     roleLocked={roleLocked}
+                    onDisconnect={onDisconnectPlayer}
                 />
             )}
         </section>

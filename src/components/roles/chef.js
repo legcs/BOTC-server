@@ -1,20 +1,21 @@
 import { canUseAbility } from '../../utils/gameLogic';
 import { seenAsEvil } from '../../utils/roleUtils';
+import { alignmentQuestion, askRegistration, inform, isAmbiguous } from './storyteller';
 
-export const handleChefAction = ({ players, actor, addNightEvent, actionKey }) => {
+const countPairs = (players) => players.filter((p, i) => seenAsEvil(p) && seenAsEvil(players[(i + 1) % players.length])).length;
+
+export const handleChefAction = (ctx) => {
+  const { players, actor, ask } = ctx;
+  const deliver = (seen) => inform(ctx, {
+    truth: countPairs(seen),
+    options: [0, 1, 2, 3].map(n => ({ label: `${n} paire(s)`, value: n })),
+    describe: (pairs, tag) => `👨‍🍳 Le Chef${tag} détecte ${pairs} paire(s) maléfique(s) voisine(s)`,
+  });
+
   if (!canUseAbility(actor)) {
-    const randomPairs = Math.floor(Math.random() * 3); // 0 à 2
-    addNightEvent(`👨‍🍳 Le Chef (empoisonné/ivre) détecte ${randomPairs} paire(s) maléfique(s) [FAUX]`, actionKey);
+    deliver(players);
     return;
   }
-
-  let evilPairs = 0;
-  for (let i = 0; i < players.length; i++) {
-    const current = players[i];
-    const next = players[(i + 1) % players.length];
-    if (seenAsEvil(current) && seenAsEvil(next)) {
-      evilPairs++;
-    }
-  }
-  addNightEvent(`👨‍🍳 Le Chef détecte ${evilPairs} paire(s) maléfique(s) voisine(s)`, actionKey);
+  // Un Ermite ou un Espion compte selon la façon dont le Conteur le fait voir
+  askRegistration(ask, players, players.filter(isAmbiguous).map(alignmentQuestion), deliver);
 };

@@ -1,6 +1,6 @@
 import { roles } from '../data/roles';
 import { getRoleCategory, isEvilRole } from '../utils/roleUtils';
-import { butlerMaster, canBeNominated, canNominate, canVote, canVoteYes, openNomination, voteSummary } from './voting';
+import { butlerMaster, canBeNominated, canNominate, canVoteYes, currentVoter, openNomination, voteSummary } from './voting';
 
 // Rôles dont le résultat de la capacité est une information destinée au joueur
 export const INFO_ROLES = ['washerwoman', 'librarian', 'investigator', 'chef', 'empath', 'fortuneteller', 'undertaker', 'ravenkeeper'];
@@ -50,13 +50,14 @@ const buildDay = (game) => {
     threshold: summary.threshold,
     onBlockId: summary.onBlockId,
     results: summary.results,
-    // Pendant le vote, on voit qui a voté mais pas quoi : les voix sont révélées à la clôture
+    // Vote à découvert et à tour de rôle, comme les mains levées autour de la table
     open: open ? {
       id: open.id,
       nominatorId: open.nominatorId,
       nomineeId: open.nomineeId,
-      voted: Object.keys(open.votes).map(Number),
-      voters: game.players.filter(canVote).length,
+      yes: open.order.filter((id) => open.votes[id] === true),
+      no: open.order.filter((id) => open.votes[id] === false),
+      voterId: currentVoter(open, game.players)?.id ?? null,
     } : null,
   };
 };
@@ -68,8 +69,8 @@ const buildBallot = (player, game) => {
   const master = butlerMaster(player, game.players);
   return {
     nominees: canNominate(player, day) ? game.players.filter((p) => canBeNominated(p, day)).map((p) => p.id) : [],
-    canVote: !!open && canVote(player) && !(player.id in open.votes),
-    // Le Majordome suit le vote de son Maître, qu'il est le seul à voir avant la clôture
+    canVote: !!open && currentVoter(open, game.players)?.id === player.id,
+    // Le Majordome ne peut voter « Oui » que si son Maître l'a fait avant lui
     canVoteYes: !open || canVoteYes(player, game.players, open),
     master: master ? { id: master.id, vote: open && master.id in open.votes ? open.votes[master.id] : null } : null,
     myVote: open && player.id in open.votes ? open.votes[player.id] : null,

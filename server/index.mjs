@@ -4,10 +4,12 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { attachRelay } from './relay.mjs';
+import { attachRelay, flushRooms } from './relay.mjs';
 
 const DIST = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 const PORT = Number(process.env.PORT ?? 3000);
+// Les salons en cours sont enregistrés ici : ils survivent à un redémarrage du serveur
+const ROOMS_FILE = process.env.ROOMS_FILE ?? join(dirname(fileURLToPath(import.meta.url)), 'data', 'rooms.json');
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -46,5 +48,12 @@ const server = createServer((req, res) => {
   createReadStream(file).on('error', () => res.destroy()).pipe(res);
 });
 
-attachRelay(server);
+attachRelay(server, { storeFile: ROOMS_FILE });
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.once(signal, () => {
+    flushRooms();
+    process.exit(0);
+  });
+}
 server.listen(PORT, () => console.log(`Grimoire du Conteur : http://localhost:${PORT}`));
