@@ -37,8 +37,10 @@ const titleStyle = {
 
 // Jeton d'un joueur vu par un autre joueur : le rôle n'apparaît que s'il est connu
 function PublicToken({ player, info, isMe, position, size, selectable, selected, onClick }) {
-  const role = info ? roleOf(info.role) : null;
-  const colors = getCategoryColor(role ? getRoleCategory(role.id) : 'unknown');
+  const role = info?.role ? roleOf(info.role) : null;
+  // Un complice dont on sait seulement qu'il est Sbire
+  const team = !role && info?.team === 'minion' ? 'minion' : null;
+  const colors = getCategoryColor(role ? getRoleCategory(role.id) : team ?? 'unknown');
   const border = selected ? '#fbbf24' : player.alive ? colors.primary : '#444';
 
   return (
@@ -47,6 +49,7 @@ function PublicToken({ player, info, isMe, position, size, selectable, selected,
       data-name={player.name}
       data-alive={player.alive}
       data-role={info?.role ?? ''}
+      data-team={team ?? ''}
       onClick={selectable ? onClick : undefined}
       style={{
         position: 'absolute',
@@ -89,6 +92,7 @@ function PublicToken({ player, info, isMe, position, size, selectable, selected,
         )}
         <div style={{ position: 'absolute', top: -4, right: -4, display: 'flex', flexDirection: 'column', gap: 2, fontSize: size * 0.2 }}>
           {!player.alive && <span>💀</span>}
+          {!player.alive && player.ghostUsed === false && <span className="ghost-vote" title="Dispose encore de son vote">🗳️</span>}
           {info?.poisoned && <span>☠️</span>}
           {info?.ivre && <span>🍺</span>}
           {info?.protected && <span>🛡️</span>}
@@ -106,9 +110,9 @@ function PublicToken({ player, info, isMe, position, size, selectable, selected,
       }}>
         {player.name}{isMe ? ' (vous)' : ''}
       </div>
-      {role && !isMe && (
-        <div style={{ fontSize: Math.max(11, size * 0.15), color: colors.primary, textShadow: '0 1px 3px #000', whiteSpace: 'nowrap' }}>
-          {role.name}
+      {(role || team) && !isMe && (
+        <div className="seat-role" style={{ fontSize: Math.max(11, size * 0.15), color: colors.primary, textShadow: '0 1px 3px #000', whiteSpace: 'nowrap' }}>
+          {role ? role.name : 'Sbire'}
         </div>
       )}
     </div>
@@ -401,8 +405,20 @@ export default function PlayerApp({ room }) {
                   </div>
                   {ballot?.canVote && (
                     <>
+                      {ballot.master && (
+                        <div className="master-vote" style={{ color: '#b794f4', fontSize: '0.85rem' }}>
+                          Votre Maître, {nameOf(ballot.master.id)}, {ballot.master.vote === null ? 'n\'a pas encore voté' : `a voté ${ballot.master.vote ? 'Oui' : 'Non'}`} : vous ne pouvez voter « Oui » que s'il l'a fait.
+                        </div>
+                      )}
                       <div style={{ display: 'flex', gap: '0.75rem' }}>
-                        <button className="vote-yes" style={voteButton('#4ade80')} onClick={() => relay.send({ t: 'act', kind: 'vote', value: true })}>Oui</button>
+                        <button
+                          className="vote-yes"
+                          disabled={!ballot.canVoteYes}
+                          style={{ ...voteButton('#4ade80'), opacity: ballot.canVoteYes ? 1 : 0.4, cursor: ballot.canVoteYes ? 'pointer' : 'not-allowed' }}
+                          onClick={() => relay.send({ t: 'act', kind: 'vote', value: true })}
+                        >
+                          Oui
+                        </button>
                         <button className="vote-no" style={voteButton('#ff6b6b')} onClick={() => relay.send({ t: 'act', kind: 'vote', value: false })}>Non</button>
                       </div>
                       {ballot.ghost === 'available' && (
@@ -482,7 +498,7 @@ export default function PlayerApp({ room }) {
                 <p style={{ margin: '0.6rem 0 0', color: '#d8d0c5', lineHeight: 1.4 }}>{myRole.description}</p>
                 {view.grimoire && (
                   <p className="grimoire-note" style={{ margin: '0.5rem 0 0', color: '#ff8a8a', fontSize: '0.9rem' }}>
-                    Vous consultez le grimoire : tous les rôles et statuts sont visibles sur le cercle.
+                    Grimoire consulté la nuit {view.grimoire.night} : les rôles et statuts du cercle sont ceux de ce moment-là.
                   </p>
                 )}
                 {view.bluffs.length > 0 && (

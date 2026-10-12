@@ -1,4 +1,5 @@
 import { canUseAbility } from '../../utils/gameLogic';
+import { seenRole } from '../../utils/roleUtils';
 
 export const handleFortuneTellerAction = ({ targets, actor, addNightEvent, actionKey }) => {
   if (targets.length !== 2) return;
@@ -11,8 +12,8 @@ export const handleFortuneTellerAction = ({ targets, actor, addNightEvent, actio
       actionKey
     );
   } else {
-    // Le Leurre est détecté comme un Démon
-    const result = targets.some(t => t.role === 'imp' || t.decoy);
+    // Le Leurre est vu comme un Démon, de même qu'un Démon mort ou un Ermite vu comme Démon
+    const result = targets.some(t => seenRole(t) === 'imp' || t.decoy);
     addNightEvent(
       `🔮 Voyante vérifie ${targets[0].name} et ${targets[1].name}: ${result ? 'Il y a un démon' : "Il n'y a pas de démon"}`,
       actionKey

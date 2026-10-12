@@ -1,5 +1,5 @@
 import { canUseAbility } from '../../utils/gameLogic';
-import { isEvilRole } from '../../utils/roleUtils';
+import { seenAsEvil } from '../../utils/roleUtils';
 
 export const handleChefAction = ({ players, actor, addNightEvent, actionKey }) => {
   if (!canUseAbility(actor)) {
@@ -12,7 +12,7 @@ export const handleChefAction = ({ players, actor, addNightEvent, actionKey }) =
   for (let i = 0; i < players.length; i++) {
     const current = players[i];
     const next = players[(i + 1) % players.length];
-    if (isEvilRole(current.role) && isEvilRole(next.role)) {
+    if (seenAsEvil(current) && seenAsEvil(next)) {
       evilPairs++;
     }
   }

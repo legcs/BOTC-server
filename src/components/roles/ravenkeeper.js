@@ -1,6 +1,6 @@
 import { playableRoles } from '../../data/roles';
 import { canUseAbility, pickRandom } from '../../utils/gameLogic';
-import { getRoleName } from '../../utils/roleUtils';
+import { getRoleName, seenRole } from '../../utils/roleUtils';
 
 export const handleRavenkeeperAction = ({ targets, actor, addNightEvent, actionKey }) => {
   const target = targets[0];
@@ -12,6 +12,6 @@ export const handleRavenkeeperAction = ({ targets, actor, addNightEvent, actionK
       actionKey
     );
   } else {
-    addNightEvent(`🐦‍⬛ Le Gardien apprend que ${target.name} est ${getRoleName(target.role)}`, actionKey);
+    addNightEvent(`🐦‍⬛ Le Gardien apprend que ${target.name} est ${getRoleName(seenRole(target))}`, actionKey);
   }
 };

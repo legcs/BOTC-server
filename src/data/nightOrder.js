@@ -8,8 +8,8 @@ export const nightOrder = {
       role: null, 
       // À moins de 7 joueurs, les Sbires et le Démon ne se connaissent pas
       minPlayers: 7,
-      action: 'Les Sbires se réveillent et se reconnaissent',
-      description: 'Le Conteur réveille tous les Sbires. Ils ouvrent les yeux et se voient mutuellement. Ils se rendorment.',
+      action: 'Les Sbires se réveillent, se reconnaissent et apprennent qui est le Démon',
+      description: 'Le Conteur réveille tous les Sbires. Ils se voient mutuellement, puis le Conteur leur désigne le Démon. Ils se rendorment.',
       order: 1
     },
     { 
@@ -92,12 +92,6 @@ export const nightOrder = {
       order: 2
     },
     { 
-      role: 'scarletwoman', 
-      action: 'La Confidente se réveille (si elle devient Démon)',
-      description: 'Si le Démon est mort avec 5+ joueurs vivants, la Confidente se réveille et le Conteur lui montre le jeton "VOUS ÊTES" + le jeton Démon. Elle est maintenant le Démon.',
-      order: 3
-    },
-    { 
       role: 'imp', 
       action: 'Le Démon (Imp) choisit un joueur à tuer',
       description: 'Le Démon se réveille et désigne un joueur. Ce joueur meurt (sauf s\'il est protégé par le Moine ou s\'il est le Soldat non-empoisonné). L\'Imp peut se choisir lui-même.',
@@ -105,8 +99,8 @@ export const nightOrder = {
     },
     { 
       role: 'ravenkeeper', 
-      action: 'Le Gardien (si tué cette nuit) choisit un joueur et apprend son rôle',
-      description: 'Si le Gardien a été tué par le Démon cette nuit, il se réveille immédiatement et désigne un joueur. Le Conteur lui montre le jeton de rôle de ce joueur.',
+      action: 'Le Gardien (s\'il meurt cette nuit) choisit un joueur et apprend son rôle',
+      description: 'Si le Gardien meurt pendant la nuit, il se réveille immédiatement et désigne un joueur, vivant ou mort. Le Conteur lui montre le jeton de rôle de ce joueur.',
       order: 5
     },
     { 
@@ -146,7 +140,7 @@ export const nightOrder = {
     { 
       role: null, 
       action: 'Réveil et annonce des morts',
-      description: 'Le Conteur annonce qui est mort pendant la nuit. Les joueurs morts révèlent leur jeton de rôle (le Conteur peut mentir sur les rôles si nécessaire).',
+      description: 'Le Conteur annonce qui est mort pendant la nuit. Le rôle des morts n\'est pas révélé.',
       order: 1
     },
     { 
@@ -169,13 +163,13 @@ export const nightOrder = {
     },
     { 
       role: 'virgin', 
-      action: 'Si la Vierge est nominée par un Villageois, le nominateur meurt',
-      description: 'La première fois que la Vierge est nominée, si le nominateur est un Villageois, il meurt immédiatement (avant le vote). Sinon, rien ne se passe. Ne fonctionne qu\'une fois.',
+      action: 'La Vierge est nominée pour la première fois : désignez son nominateur',
+      description: 'La première fois que la Vierge est nominée, si le nominateur est un Villageois, il est exécuté immédiatement : c\'est l\'exécution du jour et les nominations s\'arrêtent. Sinon, rien ne se passe. La capacité est dépensée dans tous les cas, même si la Vierge est empoisonnée.',
       order: 5
     },
     { 
       role: 'mayor', 
-      action: 'Si 3 joueurs vivants et aucune exécution, le Village gagne',
+      action: 'Si 3 joueurs vivants et aucune exécution, le Village gagne (Maire vivant et sain)',
       description: 'À la fin du jour, s\'il reste exactement 3 joueurs vivants et qu\'aucune exécution n\'a eu lieu (égalité ou pas de nomination), le Village gagne immédiatement.',
       order: 6
     },

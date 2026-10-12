@@ -1,5 +1,5 @@
 import { canUseAbility } from '../../utils/gameLogic';
-import { isEvilRole } from '../../utils/roleUtils';
+import { seenAsEvil } from '../../utils/roleUtils';
 
 // Premier joueur vivant en partant de l'Empathe dans un sens donné (les morts sont ignorés)
 const findAliveNeighbor = (players, fromIndex, step) => {
@@ -24,7 +24,7 @@ export const handleEmpathAction = ({ players, actor, addNightEvent, actionKey })
   const right = findAliveNeighbor(players, empathIndex, 1);
   // À 2 joueurs vivants, le même voisin est trouvé des deux côtés
   const neighbors = left && right && left.id === right.id ? [left] : [left, right].filter(Boolean);
-  const evilCount = neighbors.filter(n => isEvilRole(n.role)).length;
+  const evilCount = neighbors.filter(seenAsEvil).length;
 
   addNightEvent(`🫶 L'Empathe détecte ${evilCount} voisin(s) maléfique(s)`, actionKey);
 };

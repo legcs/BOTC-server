@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import PlayerToken from './PlayerToken';
 import StatusCard from './StatusCard';
+import { holdsRole } from '../utils/roleUtils';
 
 function GrimoireSection({
     containerRef,
@@ -135,12 +136,12 @@ function GrimoireSection({
                 if (activeAction) {
                     const { role, type } = activeAction;
 
-                    // Déterminer si ce joueur est sélectionnable
-                    if (type === 'select_one_not_self') {
-                        const activePlayer = players.find(p => p.role === role && p.alive);
-                        isTargetable = player.alive && player.id !== activePlayer?.id;
+                    // Tout joueur peut être désigné, vivant ou mort ; certains rôles ne peuvent pas se choisir
+                    if (type === 'select_one_not_self' || type === 'select_one_master') {
+                        const activePlayer = players.find(p => holdsRole(p, role) && p.alive);
+                        isTargetable = player.id !== activePlayer?.id;
                     } else if (type.includes('select')) {
-                        isTargetable = player.alive;
+                        isTargetable = true;
                     }
                 }
 

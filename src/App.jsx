@@ -4,19 +4,22 @@ import React, { useState, useRef, useEffect } from 'react';
 import { nightOrder } from './data/nightOrder';
 
 // Imports des utils
-import { getActionType, getRoleCategory, getRoleName } from './utils/roleUtils';
-import { assignRoles, canUseAbility, getVictory, resolveDemonDeath, shuffleArray } from './utils/gameLogic';
+import { getActionType, getRoleCategory, getRoleName, holdsRole } from './utils/roleUtils';
+import { getTargetError, knowsWithoutTargets } from './utils/targetRules';
+import { roles } from './data/roles';
+import { assignRoles, canUseAbility, getVictory, pickRandom, resolveDemonDeath, shuffleArray, virginTriggers } from './utils/gameLogic';
 import { calculateCirclePositions } from './utils/positionUtils';
 import { loadGame, saveGame } from './utils/storage';
 
 // Imports du mode multijoueur
 import { useRelay } from './multiplayer/useRelay';
-import { buildRelayState, INFO_ROLES, isMinion, pickDemonBluffs } from './multiplayer/views';
-import { canBeNominated, canNominate, canVote, openNomination, voteSummary, voteThreshold, yesVoters } from './multiplayer/voting';
+import { buildRelayState, EVIL_INFO_MIN_PLAYERS, INFO_ROLES, isMinion, pickDemonBluffs } from './multiplayer/views';
+import { canBeNominated, canNominate, canVote, canVoteYes, openNomination, voteSummary, voteThreshold, yesVoters } from './multiplayer/voting';
 
 // Imports des composants
 import VictoryModal from './components/VictoryModal';
 import HelpModal from './components/HelpModal';
+import ChoiceModal from './components/ChoiceModal';
 import Header from './components/Header';
 import GrimoireSection from './components/GrimoireSection';
 import Sidebar from './components/Sidebar';
@@ -40,9 +43,17 @@ const defaultPlayerState = {
   used: false,
   // Un mort ne vote qu'une seule fois dans le reste de la partie
   ghostUsed: false,
+  // Ermite ou Espion : rôle sous lequel le Conteur le fait passer auprès des autres capacités
+  seenAs: null,
   notes: '',
   shownRole: null,
 };
+
+// Information des maléfiques, apprise la première nuit à partir de 7 joueurs
+const evilInfoOf = (players) => (players.length >= EVIL_INFO_MIN_PLAYERS ? {
+  demonId: players.find(p => p.role === 'imp')?.id ?? null,
+  minionIds: players.filter(isMinion).map(p => p.id),
+} : null);
 
 // `session` est fourni en mode multijoueur : le grimoire est alors publié aux joueurs connectés
 export default function BotCStoryteller({ session = null, onSession, onQuit }) {
@@ -82,6 +93,12 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
   const [demonBluffs, setDemonBluffs] = useState(saved?.demonBluffs ?? []);
   // Bluffs que le Démon a transmis à ses Sbires : { rôle: [id des Sbires] }
   const [bluffShares, setBluffShares] = useState(saved?.bluffShares ?? {});
+  // Qui les maléfiques ont appris à connaître la première nuit (figé : une succession reste secrète)
+  const [evilInfo, setEvilInfo] = useState(saved?.evilInfo ?? null);
+  // Ce que l'Espion a vu du grimoire lors de sa dernière consultation
+  const [spyGrimoire, setSpyGrimoire] = useState(saved?.spyGrimoire ?? null);
+  // Décision demandée au Conteur en cours de résolution (ex. Maire attaqué de nuit)
+  const [pendingChoice, setPendingChoice] = useState(null);
   // Multijoueur : discussion, joueurs connectés au salon
   const [chat, setChat] = useState([]);
   const [roster, setRoster] = useState([]);
@@ -181,25 +198,44 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
       deadAtNightStart,
       demonBluffs,
       bluffShares,
+      evilInfo,
+      spyGrimoire,
       debateMinutes,
       day,
     }, mode);
-  }, [mode, players, currentTime, currentNight, nightLog, completedActions, roleAssigned, isStarted, executionToday, lastExecutedPlayerId, killedTonightId, deadAtNightStart, demonBluffs, bluffShares, debateMinutes, day]);
+  }, [mode, players, currentTime, currentNight, nightLog, completedActions, roleAssigned, isStarted, executionToday, lastExecutedPlayerId, killedTonightId, deadAtNightStart, demonBluffs, bluffShares, evilInfo, spyGrimoire, debateMinutes, day]);
 
 
   // ===== HANDLERS =====
   // Toute modification des joueurs passe par ici : si le Démon vient de mourir
   // et que la Confidente peut lui succéder, elle devient aussitôt le nouveau Démon.
   const setPlayers = (update) => {
-    const next = typeof update === 'function' ? update(playersRef.current) : update;
+    const hasPoisoner = (list) => list.some(p => p.role === 'poisoner' && p.alive);
+    let next = typeof update === 'function' ? update(playersRef.current) : update;
     const succession = roleAssigned && !gameEnd ? resolveDemonDeath(next) : null;
-    playersRef.current = succession?.players ?? next;
+    next = succession?.players ?? next;
+    // L'Empoisonneur qui meurt ou change de rôle perd sa capacité : son poison cesse aussitôt
+    if (hasPoisoner(playersRef.current) && !hasPoisoner(next)) {
+      next = next.map(p => (p.poisoned ? { ...p, poisoned: false } : p));
+    }
+    playersRef.current = next;
     setPlayersState(playersRef.current);
     if (succession) addNightEvent(succession.event);
   };
 
   const updatePlayer = (playerId, updates) => {
-    setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, ...updates } : p));
+    const changes = { ...updates };
+    if ('role' in updates) {
+      // Le Soûlard reçoit un rôle de Villageois absent de la partie, qu'il croit avoir
+      const taken = new Set(playersRef.current.flatMap(p => [p.role, p.shownRole]));
+      changes.shownRole = updates.role === 'drunk'
+        ? pickRandom(roles.townsfolk.filter(r => r.id !== 'unknown' && !taken.has(r.id)))?.id ?? null
+        : null;
+      changes.seenAs = null;
+    }
+    // Un joueur que le Conteur fait mourir pendant la nuit est une mort de la nuit (réveil du Gardien)
+    if (updates.alive === false && currentTime === 'NUIT') setKilledTonightId(playerId);
+    setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, ...changes } : p));
   };
 
   const endGame = (gameWinner, reason) => {
@@ -222,6 +258,17 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
   const nominate = (nominator, nomineeId) => {
     const nominee = playersRef.current.find(p => p.id === nomineeId);
     if (!canNominate(nominator, dayRef.current) || !canBeNominated(nominee, dayRef.current)) return;
+
+    // Première nomination de la Vierge : sa capacité est dépensée, et un nominateur Villageois est exécuté
+    if (holdsRole(nominee, 'virgin') && nominee.alive && !nominee.used) {
+      const triggers = virginTriggers(nominee, nominator);
+      setPlayers(prev => prev.map(p => (p.id === nominee.id ? { ...p, used: true } : p)));
+      if (triggers) {
+        addNightEvent(`🕊️ ${nominator.name} nomine ${nominee.name} (Vierge) : Villageois, il est exécuté sur-le-champ`);
+        executePlayer(nominator.id);
+        return;
+      }
+    }
     setDay(d => ({
       ...d,
       nominations: [...d.nominations, {
@@ -253,6 +300,7 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
   const castVote = (voter, value) => {
     const open = openNomination(dayRef.current);
     if (!open || !canVote(voter) || voter.id in open.votes) return;
+    if (value && !canVoteYes(voter, playersRef.current, open)) return;
     setDay(d => ({
       ...d,
       nominations: d.nominations.map(n => (n.id === open.id ? { ...n, votes: { ...n.votes, [voter.id]: value } } : n)),
@@ -283,17 +331,19 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
   };
 
   const executePlayer = (playerId) => {
-    const player = players.find(p => p.id === playerId);
+    // État le plus récent : une capacité (Vierge) peut l'avoir modifié juste avant
+    const current = playersRef.current;
+    const player = current.find(p => p.id === playerId);
     if (!player) return;
 
     setExecutionToday(true);
     setLastExecutedPlayerId(playerId);
-    const afterExecution = players.map(p => p.id === playerId
+    const afterExecution = current.map(p => p.id === playerId
       ? { ...p, alive: false, executed: true, poisoned: false, protected: false, master: false }
       : p);
 
     // Le Saint empoisonné/ivre perd sa capacité : son exécution est alors normale
-    if (player.role === 'saint' && canUseAbility(player)) {
+    if (player.role === 'saint' && player.alive && canUseAbility(player)) {
       addNightEvent(`🪽 ${player.name} (Saint) est exécuté - LE MAL GAGNE !`);
       setPlayers(afterExecution);
       endGame('evil', 'Le Saint a été exécuté.');
@@ -359,7 +409,7 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     setPlayers(basePlayers.map(p => ({
       ...p,
       protected: false,
-      poisoned: false // ← L'empoisonnement ne dure qu'une nuit
+      poisoned: false // ← Le poison dure la nuit et le jour suivant : il cesse au crépuscule
     })));
 
     setCompletedActions([]);
@@ -373,6 +423,8 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     setLastExecutedPlayerId(null);
     setIsStarted(true);
     addNightEvent('☀️ Lever du soleil - Début du jour');
+    // La protection du Moine ne vaut que pour la nuit
+    setPlayers(prev => prev.map(p => (p.protected ? { ...p, protected: false } : p)));
     setCurrentTime('JOUR');
     setCompletedActions([]);
     if (session) {
@@ -408,6 +460,8 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     const bluffs = pickDemonBluffs(assigned, shuffleArray);
     setDemonBluffs(bluffs);
     setBluffShares({});
+    setEvilInfo(evilInfoOf(assigned));
+    setSpyGrimoire(null);
 
     const count = (category) => assigned.filter(p => getRoleCategory(p.role) === category).length;
     addNightEvent(
@@ -427,6 +481,9 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     setRoleAssigned(false);
     setDemonBluffs([]);
     setBluffShares({});
+    setEvilInfo(null);
+    setSpyGrimoire(null);
+    setPendingChoice(null);
     setForcedEnd(null);
     setDismissedFor(null);
     setSelectedPlayerId(null);
@@ -434,6 +491,12 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
 
   const startAction = (role, action, actionKey) => {
     if (completedActions.includes(actionKey)) return;
+
+    // Rien à désigner : le résultat est connu d'avance (Libraire sans Étranger en jeu)
+    if (knowsWithoutTargets(role, players, findActor(role))) {
+      runRoleAction(role, action, actionKey, []);
+      return;
+    }
 
     setActiveAction({
       role,
@@ -445,9 +508,10 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
   };
 
   // Le joueur qui utilise la capacité. Le Gardien agit après sa mort, la nuit où il est tué.
+  // Un Soûlard agit à la place du Villageois qu'il croit être.
   const findActor = (role) => (role === 'ravenkeeper'
-    ? players.find(p => p.role === role && p.id === killedTonightId)
-    : players.find(p => p.role === role && p.alive));
+    ? players.find(p => holdsRole(p, role) && p.id === killedTonightId)
+    : players.find(p => holdsRole(p, role) && p.alive));
 
   const handleTokenClickDuringAction = (playerId) => {
     if (!activeAction) return;
@@ -458,7 +522,7 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     const { role, type } = activeAction;
 
     // Vérifications selon le type d'action
-    if (type === 'select_one_not_self' && playerId === findActor(role)?.id) {
+    if ((type === 'select_one_not_self' || type === 'select_one_master') && playerId === findActor(role)?.id) {
       // Ne peut pas se sélectionner soi-même
       return;
     }
@@ -498,7 +562,20 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
       actionKey,
       setPlayers,
       onNightDeath: setKilledTonightId,
+      executePlayer,
+      ask: setPendingChoice,
     });
+
+    // L'Espion voit le grimoire tel qu'il est au moment où il le consulte
+    if (role === 'spy' && actor?.role === 'spy' && canUseAbility(actor)) {
+      setSpyGrimoire({
+        night: currentNight,
+        players: Object.fromEntries(playersRef.current.map(p => [p.id, {
+          role: p.role === 'dead' ? 'imp' : p.role,
+          poisoned: p.poisoned, ivre: p.ivre || p.role === 'drunk', protected: p.protected, decoy: p.decoy, master: p.master,
+        }])),
+      });
+    }
   };
 
   const confirmAction = () => {
@@ -506,6 +583,7 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
 
     const { role, action, actionKey } = activeAction;
     const targets = selectedTargets.map(id => players.find(p => p.id === id)).filter(Boolean);
+    if (getTargetError(role, targets, findActor(role))) return;
     runRoleAction(role, action, actionKey, targets);
     cancelAction();
   };
@@ -597,10 +675,12 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     } else if (msg.t === 'targets') {
       // Un joueur a désigné les cibles de sa capacité : le Conteur n'a plus qu'à confirmer
       if (!activeAction || !activeActor || activeActor.key !== msg.key) return;
+      // Lavandière, Libraire, Enquêteur : c'est le Conteur qui désigne les deux joueurs
+      if (activeAction.type === 'select_two_info') return;
       const count = activeAction.type.includes('two') ? 2 : 1;
       const ids = [...new Set(msg.ids)]
         .filter(id => players.some(p => p.id === id))
-        .filter(id => !(activeAction.type === 'select_one_not_self' && id === activeActor.id))
+        .filter(id => !(['select_one_not_self', 'select_one_master'].includes(activeAction.type) && id === activeActor.id))
         .slice(0, count);
       setSelectedTargets(ids);
     }
@@ -617,7 +697,7 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
   const relayPayload = session ? JSON.stringify({
     t: 'state',
     ...buildRelayState({
-      players, currentTime, currentNight, roleAssigned, joinOpen, gameEnd, deadAtNightStart, demonBluffs, bluffShares,
+      players, currentTime, currentNight, roleAssigned, joinOpen, gameEnd, deadAtNightStart, demonBluffs, bluffShares, evilInfo, spyGrimoire,
       nightLog, activeAction, actorId: activeActor?.id ?? null, selectedTargets, day,
     }),
   }) : null;
@@ -766,9 +846,20 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
         <ActionControlPanel
           activeAction={activeAction}
           selectedTargets={selectedTargets}
-          remoteActor={session && activeActor?.key ? activeActor.name : null}
+          remoteActor={session && activeActor?.key && activeAction.type !== 'select_two_info' ? activeActor.name : null}
+          error={getTargetError(activeAction.role, selectedTargets.map(id => players.find(p => p.id === id)).filter(Boolean), activeActor)}
           onConfirm={confirmAction}
           onCancel={cancelAction}
+        />
+      )}
+
+      {pendingChoice && (
+        <ChoiceModal
+          choice={pendingChoice}
+          onChoose={(option) => {
+            setPendingChoice(null);
+            option.run();
+          }}
         />
       )}
 

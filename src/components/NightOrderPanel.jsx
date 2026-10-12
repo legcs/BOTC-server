@@ -1,6 +1,6 @@
 import React from 'react';
 import { allRoles } from '../data/roles';
-import { getRoleCategory, getCategoryColor, getActionType } from '../utils/roleUtils';
+import { getRoleCategory, getCategoryColor, getActionType, holdsRole } from '../utils/roleUtils';
 import DayVotePanel from './DayVotePanel';
 
 function NightOrderPanel({
@@ -27,16 +27,16 @@ function NightOrderPanel({
     ? nightOrder.day
     : (currentNight === 1 ? nightOrder.first : nightOrder.other);
 
-  const activeRoles = players.filter(p => p.alive).map(p => p.role);
 
   const isStepActive = (step) => {
     if (step.minPlayers && players.length < step.minPlayers) return false;
     if (step.role === null) return true;
     // Le Gardien ne se réveille que la nuit où il est tué
     if (step.role === 'ravenkeeper') {
-      return players.some(p => p.role === 'ravenkeeper' && p.id === killedTonightId);
+      return players.some(p => holdsRole(p, 'ravenkeeper') && p.id === killedTonightId);
     }
-    return activeRoles.includes(step.role);
+    // Un Soûlard est réveillé à la place du Villageois qu'il croit être
+    return players.some(p => p.alive && holdsRole(p, step.role));
   };
 
   const renderDayActions = () => (

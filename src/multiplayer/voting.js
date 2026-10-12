@@ -8,6 +8,16 @@ export const voteThreshold = (players) => Math.ceil(players.filter((p) => p.aliv
 
 export const canVote = (player) => !!player && (player.alive || !player.ghostUsed);
 
+// Le Majordome ne peut voter pour l'exécution que si son Maître l'a fait avant lui
+export const butlerMaster = (player, players) => (player?.role === 'butler' && player.alive
+  ? players.find((p) => p.master && p.id !== player.id) ?? null
+  : null);
+
+export const canVoteYes = (player, players, nomination) => {
+  const master = butlerMaster(player, players);
+  return !master || nomination.votes[master.id] === true;
+};
+
 export const openNomination = (day) => day?.nominations.find((n) => n.open) ?? null;
 
 export const yesVoters = (nomination) => Object.entries(nomination.votes)
@@ -17,7 +27,8 @@ export const yesVoters = (nomination) => Object.entries(nomination.votes)
 export const canNominate = (player, day) => !!player && player.alive && day?.phase === 'nominations'
   && !openNomination(day) && !day.nominations.some((n) => n.nominatorId === player.id);
 
-export const canBeNominated = (player, day) => !!player && player.alive
+// Un mort peut être nominé, comme dans le jeu
+export const canBeNominated = (player, day) => !!player
   && !day.nominations.some((n) => n.nomineeId === player.id);
 
 // Résultat des votes clos et joueur actuellement condamné (null si aucun ou égalité)

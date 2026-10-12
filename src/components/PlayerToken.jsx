@@ -1,6 +1,6 @@
 import React from 'react';
 import { allRoles } from '../data/roles';
-import { getRoleCategory, getCategoryColor } from '../utils/roleUtils';
+import { getRoleCategory, getCategoryColor, getRoleName } from '../utils/roleUtils';
 
 function PlayerToken({
   player,
@@ -213,6 +213,21 @@ function PlayerToken({
       }}>
         {player.name}
       </div>
+
+      {/* Ce que le Conteur doit garder en tête : rôle cru par le Soûlard, rôle sous lequel on est vu */}
+      {(player.shownRole || player.seenAs) && (
+        <div className="token-note" style={{
+          position: 'absolute',
+          top: tokenSize + 24,
+          fontSize: 12,
+          color: '#00c9a7',
+          textShadow: '0 1px 3px #000, 0 0 8px #000',
+          whiteSpace: 'nowrap',
+          pointerEvents: 'none',
+        }}>
+          {player.shownRole ? `croit être ${getRoleName(player.shownRole)}` : `vu comme ${getRoleName(player.seenAs)}`}
+        </div>
+      )}
     </div>
   );
 }

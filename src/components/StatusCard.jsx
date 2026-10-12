@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { allRoles, roles } from '../data/roles';
-import { getRoleCategory, getCategoryColor } from '../utils/roleUtils';
+import { getRoleCategory, getCategoryColor, getRoleName, seenAsOptions } from '../utils/roleUtils';
 
 function StatusCard({
   player,
@@ -278,6 +278,29 @@ function StatusCard({
       }}>
         {role?.description}
       </p>
+
+      {player.role === 'drunk' && player.shownRole && (
+        <p className="drunk-belief" style={{ margin: '0 0 0.8rem', fontSize: '0.9rem', color: '#00c9a7' }}>
+          🍺 Croit être <strong>{getRoleName(player.shownRole)}</strong> : réveillez-le à ce titre, sa capacité ne fonctionne pas.
+        </p>
+      )}
+
+      {seenAsOptions(player.role).length > 0 && (
+        <label className="seen-as" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0 0 0.8rem', fontSize: '0.85rem', color: '#b8a88a' }}>
+          Vu par les autres comme
+          <select
+            value={player.seenAs ?? ''}
+            onChange={(e) => onUpdate(player.id, { seenAs: e.target.value || null })}
+            style={{
+              flex: 1, minWidth: 0, background: 'rgba(0, 0, 0, 0.4)', border: '1px solid rgba(139, 69, 69, 0.4)',
+              borderRadius: '6px', color: '#e8e0d5', padding: '0.3rem 0.4rem', fontFamily: 'inherit', fontSize: '0.85rem',
+            }}
+          >
+            <option value="">{role?.name} (son vrai rôle)</option>
+            {seenAsOptions(player.role).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+        </label>
+      )}
 
       <div style={{
         display: 'grid',

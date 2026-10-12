@@ -20,19 +20,18 @@ export const victoryConditions = {
       examples: [
         "Le Démon est exécuté pendant le jour → Village gagne",
         "Le Mercenaire tue le Démon → Village gagne",
-        "L'Imp se suicide en attaquant le Soldat → Village gagne (sauf si Confidente)",
-        "L'Imp se suicide volontairement → Village gagne (sauf si Confidente)"
+        "L'Imp se suicide alors qu'aucun Sbire n'est vivant → Village gagne"
       ]
     },
     mayor: {
       title: "Victoire Alternative du Maire",
       condition: "3 joueurs vivants + aucune exécution",
-      description: "À la fin d'un jour, s'il reste exactement 3 joueurs vivants et qu'aucune exécution n'a eu lieu ce jour-là, le Village gagne immédiatement.",
+      description: "Si le Maire est en jeu : à la fin d'un jour, s'il reste exactement 3 joueurs vivants et qu'aucune exécution n'a eu lieu ce jour-là, le Village gagne immédiatement.",
       details: [
         "Doit être EXACTEMENT 3 joueurs vivants (pas plus, pas moins)",
         "Aucune exécution ne doit avoir eu lieu ce jour-là",
-        "Fonctionne même si le Maire est mort",
-        "Fonctionne même si le Maire est empoisonné ou ivre",
+        "Le Maire doit être vivant",
+        "Ne fonctionne pas si le Maire est empoisonné ou ivre",
         "Les égalités de vote comptent comme 'aucune exécution'",
         "Si personne n'est nominé, cela compte comme 'aucune exécution'"
       ],
@@ -62,12 +61,12 @@ export const victoryConditions = {
       details: [
         "Peu importe qui est le 2ème joueur (Villageois, Étranger ou Sbire)",
         "La partie s'arrête instantanément",
-        "Moment de vérification : au réveil après la phase de nuit",
-        "Exception : Le Maire peut empêcher cette victoire (voir conditions du Maire)"
+        "Vérifié immédiatement, de jour comme de nuit",
+        "Si les deux camps gagnent en même temps, le Village l'emporte"
       ],
-      timing: "Vérifié au début de chaque jour (après les morts de nuit)",
+      timing: "Immédiat (dès qu'il ne reste que 2 joueurs vivants)",
       examples: [
-        "Nuit : Le Démon tue → il reste 2 joueurs → Mal gagne au réveil",
+        "Nuit : Le Démon tue → il reste 2 joueurs → Mal gagne",
         "Jour : Exécution → il reste 2 joueurs avec le Démon → Mal gagne",
         "Si le Démon se suicide et qu'une Confidente se transforme → La partie continue"
       ]
@@ -75,9 +74,9 @@ export const victoryConditions = {
     saint: {
       title: "Victoire Instantanée via le Saint",
       condition: "Le Saint est exécuté",
-      description: "Si le Saint est exécuté pendant la phase de jour, le Mal gagne immédiatement, quelle que soit la situation.",
+      description: "Si le Saint est exécuté pendant la phase de jour, le Mal gagne immédiatement.",
       details: [
-        "Fonctionne même si le Saint est empoisonné ou ivre",
+        "Ne fonctionne pas si le Saint est empoisonné ou ivre : son exécution est alors sans conséquence",
         "Fonctionne même s'il reste beaucoup de joueurs vivants",
         "Ne fonctionne QUE si exécuté (pas s'il meurt de nuit)",
         "La victoire est immédiate (la partie s'arrête avant la nuit)",
@@ -88,7 +87,7 @@ export const victoryConditions = {
         "Le Saint est exécuté au jour 1 → Mal gagne immédiatement",
         "Le Saint est tué par le Démon la nuit → Rien ne se passe (pas exécution)",
         "Le Saint est exécuté alors qu'il ne reste que 3 joueurs → Mal gagne (pas le Village)",
-        "Le Saint ivre est exécuté → Mal gagne quand même"
+        "Le Saint empoisonné est exécuté → Rien ne se passe, la partie continue"
       ],
       strategy: [
         "Le Saint doit rester discret",
@@ -131,10 +130,10 @@ export const victoryConditions = {
     impSuicide: {
       title: "Suicide de l'Imp",
       condition: "L'Imp se choisit lui-même comme cible",
-      description: "L'Imp peut volontairement se suicider la nuit en se choisissant comme cible. Il meurt et choisit un Sbire pour devenir le nouveau Imp.",
+      description: "L'Imp peut volontairement se suicider la nuit en se choisissant comme cible. Il meurt et un Sbire vivant, choisi par le Conteur, devient le nouvel Imp.",
       details: [
         "L'Imp peut se tuer lui-même n'importe quelle nuit",
-        "Il désigne un Sbire vivant qui devient le nouveau Imp",
+        "Le Conteur désigne le Sbire vivant qui devient le nouvel Imp (la Confidente en priorité)",
         "Si aucun Sbire vivant : l'Imp meurt et le Village gagne",
         "Le nouveau Imp apprend qu'il est devenu Démon",
         "Stratégie pour confondre le Village (faux mort suspect)",
@@ -160,7 +159,7 @@ export const victoryConditions = {
       details: [
         "Le Soûlard NE SAIT PAS qu'il est Soûlard",
         "Il pense être un Villageois spécifique",
-        "Toutes ses informations sont fausses (générées par le Conteur)",
+        "Ses informations peuvent être fausses (au choix du Conteur)",
         "Sa capacité ne fonctionne jamais (même s'il pense l'utiliser)",
         "Compte comme un joueur Gentil pour les conditions de victoire",
         "Le Conteur doit le réveiller comme son rôle supposé"
@@ -179,8 +178,8 @@ export const victoryConditions = {
       details: [
         "Le joueur empoisonné ne sait pas qu'il l'est",
         "Sa capacité ne fonctionne pas correctement",
-        "Les informations qu'il reçoit sont fausses (choisies par le Conteur)",
-        "L'empoisonnement dure jusqu'à la prochaine nuit",
+        "Les informations qu'il reçoit peuvent être fausses (au choix du Conteur)",
+        "L'empoisonnement dure la nuit et le jour suivant ; il cesse aussi dès que l'Empoisonneur meurt",
         "Ne change pas les conditions de victoire",
         "Un joueur peut être empoisonné plusieurs nuits de suite"
       ],
@@ -189,7 +188,7 @@ export const victoryConditions = {
         "Empathe empoisonné → Reçoit un mauvais chiffre",
         "Voyante empoisonnée → Reçoit de fausses réponses",
         "Soldat empoisonné → Peut être tué par le Démon",
-        "Saint empoisonné → Si exécuté, le Mal gagne quand même"
+        "Saint empoisonné → Son exécution ne fait pas gagner le Mal"
       ]
     }
   },
@@ -200,16 +199,15 @@ export const victoryConditions = {
   summary: {
     good: [
       "✅ Le Démon meurt → VILLAGE GAGNE",
-      "✅ 3 joueurs + pas d'exécution ce jour → VILLAGE GAGNE (Maire)"
+      "✅ 3 joueurs + pas d'exécution ce jour → VILLAGE GAGNE (Maire vivant et sain)"
     ],
     evil: [
       "❌ 2 joueurs vivants (dont Démon) → MAL GAGNE",
-      "❌ Saint exécuté → MAL GAGNE"
+      "❌ Saint exécuté (ni empoisonné ni ivre) → MAL GAGNE"
     ],
     exceptions: [
       "⚠️ Démon meurt avec 5+ vivants + Confidente vivante → Confidente devient Démon → PARTIE CONTINUE",
-      "⚠️ Imp se suicide avec Sbire vivant → Sbire devient Imp → PARTIE CONTINUE",
-      "⚠️ Maire actif avec 3 vivants → Empêche victoire du Mal temporairement"
+      "⚠️ Imp se suicide avec Sbire vivant → Sbire devient Imp → PARTIE CONTINUE"
     ]
   },
 
@@ -288,8 +286,8 @@ export const victoryConditions = {
     },
     poisonedSaint: {
       question: "Si le Saint empoisonné est exécuté, le Mal gagne-t-il ?",
-      answer: "OUI. Le Saint fonctionne MÊME empoisonné ou ivre. C'est l'une des rares capacités qui fonctionne toujours.",
-      exception: "Le Saint est une exception à la règle de l'empoisonnement/ivresse."
+      answer: "NON. Un Saint empoisonné ou ivre n'a plus de capacité : son exécution est sans conséquence et la partie continue.",
+      exception: "Le Saint suit la règle générale de l'empoisonnement et de l'ivresse."
     }
   }
 };
@@ -297,52 +295,6 @@ export const victoryConditions = {
 // ============================================
 // FONCTIONS UTILITAIRES
 // ============================================
-
-/**
- * Vérifie si le Village a gagné
- * @param {boolean} isDemonDead - Le Démon est-il mort ?
- * @param {number} playersAlive - Nombre de joueurs vivants
- * @param {boolean} wasExecutionToday - Y a-t-il eu une exécution aujourd'hui ?
- * @param {boolean} hasScarletWoman - Y a-t-il une Confidente vivante ?
- * @returns {boolean|string} true si victoire, false sinon, 'scarletwoman' si transformation
- */
-export const checkGoodVictory = (isDemonDead, playersAlive, wasExecutionToday, hasScarletWoman) => {
-  // Vérifier victoire standard (Démon mort)
-  if (isDemonDead) {
-    if (hasScarletWoman && playersAlive >= 5) {
-      return 'scarletwoman'; // Transformation, pas de victoire
-    }
-    return true; // Village gagne
-  }
-
-  // Vérifier victoire alternative (Maire)
-  if (playersAlive === 3 && !wasExecutionToday) {
-    return true; // Village gagne via Maire
-  }
-
-  return false; // Pas de victoire
-};
-
-/**
- * Vérifie si le Mal a gagné
- * @param {boolean} wasSaintExecuted - Le Saint a-t-il été exécuté ?
- * @param {number} playersAlive - Nombre de joueurs vivants
- * @param {boolean} isDemonAlive - Le Démon est-il vivant ?
- * @returns {boolean}
- */
-export const checkEvilVictory = (wasSaintExecuted, playersAlive, isDemonAlive) => {
-  // Vérifier victoire via Saint
-  if (wasSaintExecuted) {
-    return true; // Mal gagne
-  }
-
-  // Vérifier victoire standard (2 joueurs dont Démon)
-  if (playersAlive === 2 && isDemonAlive) {
-    return true; // Mal gagne
-  }
-
-  return false; // Pas de victoire
-};
 
 /**
  * Obtient toutes les conditions de victoire sous forme de tableau

@@ -1,6 +1,6 @@
 import { roles } from '../data/roles';
 import { getRoleCategory, isEvilRole } from '../utils/roleUtils';
-import { canBeNominated, canNominate, canVote, openNomination, voteSummary } from './voting';
+import { butlerMaster, canBeNominated, canNominate, canVote, canVoteYes, openNomination, voteSummary } from './voting';
 
 // Rôles dont le résultat de la capacité est une information destinée au joueur
 export const INFO_ROLES = ['washerwoman', 'librarian', 'investigator', 'chef', 'empath', 'fortuneteller', 'undertaker', 'ravenkeeper'];
@@ -65,9 +65,13 @@ const buildBallot = (player, game) => {
   const { day } = game;
   if (!day || game.currentTime !== 'JOUR' || game.gameEnd) return null;
   const open = openNomination(day);
+  const master = butlerMaster(player, game.players);
   return {
     nominees: canNominate(player, day) ? game.players.filter((p) => canBeNominated(p, day)).map((p) => p.id) : [],
     canVote: !!open && canVote(player) && !(player.id in open.votes),
+    // Le Majordome suit le vote de son Maître, qu'il est le seul à voir avant la clôture
+    canVoteYes: !open || canVoteYes(player, game.players, open),
+    master: master ? { id: master.id, vote: open && master.id in open.votes ? open.votes[master.id] : null } : null,
     myVote: open && player.id in open.votes ? open.votes[player.id] : null,
     ghost: player.alive ? null : (player.ghostUsed ? 'used' : 'available'),
   };
@@ -82,18 +86,24 @@ const buildPublic = (game) => ({
   chatOpen: !game.roleAssigned || game.currentTime === 'JOUR' || !!game.gameEnd,
   gameEnd: game.gameEnd ? { winner: game.gameEnd.winner, reason: game.gameEnd.reason } : null,
   day: buildDay(game),
-  players: game.players.map((p) => ({ id: p.id, name: p.name, alive: publiclyAlive(p, game) })),
+  players: game.players.map((p) => {
+    const alive = publiclyAlive(p, game);
+    // Le jeton de vote des morts est visible de tous
+    return { id: p.id, name: p.name, alive, ...(alive ? {} : { ghostUsed: !!p.ghostUsed }) };
+  }),
 });
 
 const buildPrompt = (player, game) => {
   const { activeAction, actorId, selectedTargets } = game;
   if (!activeAction || actorId !== player.id) return null;
+  // Lavandière, Libraire, Enquêteur : le Conteur désigne lui-même les deux joueurs
+  if (activeAction.type === 'select_two_info') return null;
+  const notSelf = ['select_one_not_self', 'select_one_master'].includes(activeAction.type);
   return {
     action: activeAction.action,
     count: activeAction.type.includes('two') ? 2 : 1,
-    selectable: game.players
-      .filter((p) => publiclyAlive(p, game) && !(activeAction.type === 'select_one_not_self' && p.id === player.id))
-      .map((p) => p.id),
+    // N'importe quel joueur peut être désigné, vivant ou mort
+    selectable: game.players.filter((p) => !(notSelf && p.id === player.id)).map((p) => p.id),
     chosen: selectedTargets,
   };
 };
@@ -101,26 +111,31 @@ const buildPrompt = (player, game) => {
 // Ce qu'un joueur a le droit de voir, selon son rôle
 const buildView = (player, game) => {
   const evil = isEvil(player);
-  const spy = player.role === 'spy';
   const demon = realRole(player) === 'imp' && player.alive;
+  // L'Espion voit le grimoire tel qu'il était lors de sa dernière consultation nocturne
+  const grimoire = player.role === 'spy' && !game.gameEnd ? game.spyGrimoire : null;
+  // Information des maléfiques : apprise la première nuit, elle n'est pas mise à jour ensuite
+  // (une succession du Démon reste secrète pour les autres Sbires)
+  const evilInfo = game.evilInfo ?? (evilInfoApplies(game.players) ? {
+    demonId: game.players.find((p) => p.role === 'imp')?.id ?? null,
+    minionIds: game.players.filter(isMinion).map((p) => p.id),
+  } : null);
+  const informed = !!evilInfo && (evilInfo.demonId === player.id || evilInfo.minionIds.includes(player.id));
   const known = {};
 
   if (game.roleAssigned) {
     for (const other of game.players) {
-      if (game.gameEnd || spy) {
-        // L'Espion consulte le grimoire : tous les rôles et leurs statuts
-        known[other.id] = {
-          role: other.role === 'dead' ? 'imp' : other.role,
-          ...(spy && !game.gameEnd ? {
-            poisoned: other.poisoned, ivre: other.ivre || other.role === 'drunk', protected: other.protected,
-            decoy: other.decoy, master: other.master,
-          } : {}),
-        };
+      if (game.gameEnd) {
+        known[other.id] = { role: realRole(other) };
+      } else if (grimoire?.players[other.id]) {
+        known[other.id] = grimoire.players[other.id];
       } else if (other.id === player.id) {
         known[other.id] = { role: believedRole(other) };
-      } else if (evil && isEvil(other) && evilInfoApplies(game.players)) {
-        // Les Sbires et le Démon se connaissent (à partir de 7 joueurs)
-        known[other.id] = { role: realRole(other) };
+      } else if (informed && other.id === evilInfo.demonId) {
+        known[other.id] = { role: 'imp' };
+      } else if (informed && evilInfo.minionIds.includes(other.id)) {
+        // On sait qui est Sbire, pas quel Sbire
+        known[other.id] = { team: 'minion' };
       }
     }
   }
@@ -128,10 +143,10 @@ const buildView = (player, game) => {
   return {
     id: player.id,
     name: player.name,
-    role: game.roleAssigned ? (game.gameEnd || spy ? realRole(player) : believedRole(player)) : null,
+    role: game.roleAssigned ? (game.gameEnd ? realRole(player) : believedRole(player)) : null,
     team: game.roleAssigned ? (evil ? 'evil' : 'good') : null,
     known,
-    grimoire: spy && !game.gameEnd,
+    grimoire: grimoire ? { night: grimoire.night } : null,
     bluffs: demon ? game.demonBluffs : [],
     // Le Démon choisit quels bluffs il transmet à quels Sbires
     minions: demon ? game.players.filter(isMinion).map((p) => p.id) : [],

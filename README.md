@@ -95,16 +95,16 @@ Chaque joueur ouvre le lien d'invitation (ou saisit le code du salon), entre son
 | Qui | Ce qu'il voit |
 | --- | --- |
 | Tous les joueurs | Le cercle, la phase en cours, qui est mort, son propre rôle et sa description |
-| Sbires et Démon | Les rôles de leurs complices, à partir de 7 joueurs |
+| Sbires et Démon | Qui est le Démon et qui sont les Sbires (sans leur rôle exact), à partir de 7 joueurs ; une succession du Démon reste secrète |
 | Démon | Trois bluffs (rôles gentils absents de la partie), à partir de 7 joueurs |
 | Sbires | Les bluffs que le Démon choisit de leur transmettre |
-| Espion | Tout le grimoire : rôles et statuts de chacun |
-| Soûlard | Un rôle de Villageois : il ignore qu'il est Soûlard |
+| Espion | Le grimoire (rôles et statuts de chacun) tel qu'il était lors de sa dernière consultation nocturne |
+| Soûlard | Un rôle de Villageois : il ignore qu'il est Soûlard, et il est réveillé comme ce Villageois |
 | Rôles à information | Le résultat de leur capacité, dans « Vos informations », sans indication d'empoisonnement |
 
 Les droits suivent les règles du jeu :
 
-- **Capacités** : quand le Conteur réveille un rôle qui doit désigner des joueurs, la demande apparaît sur l'écran du joueur concerné. Il touche ses cibles et valide ; le Conteur confirme et l'application résout la capacité.
+- **Capacités** : quand le Conteur réveille un rôle qui doit désigner des joueurs, la demande apparaît sur l'écran du joueur concerné. Il touche ses cibles, vivantes ou mortes, et valide ; le Conteur confirme et l'application résout la capacité. Pour la Lavandière, le Libraire et l'Enquêteur, c'est le Conteur qui désigne les deux joueurs : le joueur apprend seulement que l'un des deux a tel rôle.
 - **Morts de la nuit** : elles restent secrètes jusqu'au lever du jour. Les exécutions sont visibles immédiatement.
 - **Discussion** : ouverte à tous le jour. La nuit, un joueur ne peut écrire qu'au Conteur, en privé ; le Conteur peut répondre en privé à n'importe quel joueur.
 - **Bluffs** : le Démon voit ses trois bluffs et transmet ceux de son choix à chaque Sbire, d'un clic ; il peut les reprendre. Comme dans le jeu, les Sbires ne reçoivent rien d'office. Le Conteur retrouve les trois bluffs dans son journal.
@@ -119,7 +119,9 @@ Avant de lancer la partie, le Conteur règle la **durée du débat** (en minutes
 3. **Vote** : tous les joueurs répondent « Oui » ou « Non » sur leur écran. Les voix restent secrètes jusqu'à la clôture, qui a lieu quand tout le monde a voté ou quand le Conteur clôt le vote.
 4. **Résultat** : il faut au moins la moitié des vivants pour condamner un joueur, et celui qui réunit le plus de voix l'emporte ; en cas d'égalité, personne n'est condamné. Le Conteur exécute le condamné d'un clic, ou passe à la nuit sans exécution.
 
-Un joueur mort ne nomine plus et ne dispose que d'un seul vote pour le reste de la partie : il le dépense en votant « Oui ».
+Un joueur mort ne nomine plus (mais peut être nominé) et ne dispose que d'un seul vote pour le reste de la partie : il le dépense en votant « Oui ». Son jeton de vote reste visible de tous tant qu'il ne l'a pas dépensé.
+
+Deux rôles modifient le vote. Le **Majordome** ne peut voter « Oui » qu'après son Maître, dont il est le seul à voir le vote avant la clôture. La **Vierge**, nominée pour la première fois par un Villageois, le fait exécuter sur-le-champ : il n'y a pas de vote et la journée s'arrête.
 
 ![Vote sur l'écran d'un joueur](Documentation/screenshots/16-multi-vote.jpg)
 
@@ -140,8 +142,9 @@ Le Démon, lui, connaît son Sbire et reçoit ses trois bluffs, qu'il peut lui t
 - Un joueur retiré du cercle par le Conteur est déconnecté et en est informé sur son écran.
 - La partie tourne dans le navigateur du Conteur, qui calcule ce que chaque joueur a le droit de voir. Le serveur relaie ces vues, sans jamais envoyer le grimoire complet à un joueur.
 - Les salons sont gardés en mémoire : ils disparaissent si le serveur redémarre.
-- Le vote ne tient pas compte du Majordome (qui ne devrait voter que si son Maître vote) ni de la Vierge : le Conteur applique ces règles à la main. Il garde aussi la possibilité d'exécuter n'importe quel joueur sans vote.
-- Le Soûlard n'est pas réveillé la nuit à la place du rôle qu'il croit avoir : le Conteur lui envoie sa fausse information par message privé.
+- Le Conteur garde la possibilité d'exécuter n'importe quel joueur sans vote.
+- Ermite et Espion : le Conteur règle sur leur fiche le rôle sous lequel les autres capacités les voient (« Vu par les autres comme »). Ce réglage vaut jusqu'à ce qu'il le change ; il n'est pas demandé à chaque détection.
+- Une information fausse (joueur empoisonné, ivre ou Soûlard) est tirée au hasard par l'application : le Conteur ne la choisit pas.
 
 ## Fonctionnalités
 
@@ -202,7 +205,7 @@ npm run test:e2e
 Le script `tests/e2e.mjs` démarre son propre serveur Vite, puis :
 
 - joue une partie complète à 8 joueurs, de l'ajout des joueurs à la victoire, en vérifiant l'état du grimoire à chaque étape ;
-- vérifie les règles une par une à partir de parties préparées : Moine, Soldat, Voyante et Leurre, Empathe, Gardien, Croque-mort, Mercenaire, Majordome, Confidente, Saint, Maire, poison et conditions de victoire ;
+- vérifie les règles une par une à partir de parties préparées : les 22 rôles de *Trouble Brewing*, dont le Soûlard, la Vierge, l'Ermite et l'Espion « vus comme », le Maire attaqué de nuit, le poison et les conditions de victoire ;
 - contrôle la répartition des rôles de 5 à 15 joueurs, la sauvegarde après rechargement et l'affichage sur téléphone ;
 - joue une partie multijoueur avec 9 navigateurs (un Conteur et 8 joueurs) : synchronisation, vue de chaque rôle, choix des cibles, débat chronométré, nominations et votes, vote unique des morts, discussion publique et privée, secret des morts de nuit, reconnexion ;
 - régénère les captures d'écran de ce README dans `Documentation/screenshots/`.

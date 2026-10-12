@@ -19,9 +19,12 @@ const SEED = Number(process.env.SEED ?? 32);
 const NAMES = ['Alice', 'Bruno', 'Chloé', 'David', 'Emma', 'Farid', 'Gaëlle', 'Hugo'];
 
 const SELECT_ROLES = ['poisoner', 'slayer', 'monk', 'imp', 'fortuneteller', 'washerwoman', 'librarian', 'investigator', 'butler', 'ravenkeeper'];
-const TOWNSFOLK = ['washerwoman', 'librarian', 'investigator', 'chef', 'empath', 'fortuneteller', 'undertaker', 'monk', 'ravenkeeper', 'virgin', 'slayer', 'soldier', 'mayor'];
-const OUTSIDERS = ['butler', 'drunk', 'recluse', 'saint'];
-const MINIONS = ['poisoner', 'spy', 'scarletwoman', 'baron'];
+// Un Soûlard tient, à ses yeux, le rôle de Villageois qu'il croit avoir
+const holds = (p, role) => p.role === role || (p.role === 'drunk' && p.shownRole === role);
+const TOWNSFOLK_IDS = ['washerwoman', 'librarian', 'investigator', 'chef', 'empath', 'fortuneteller', 'undertaker', 'monk', 'ravenkeeper', 'virgin', 'slayer', 'soldier', 'mayor'];
+const OUTSIDER_IDS = ['butler', 'drunk', 'recluse', 'saint'];
+const MINION_IDS = ['poisoner', 'spy', 'scarletwoman', 'baron'];
+const STARTING_INFO = { washerwoman: TOWNSFOLK_IDS, librarian: OUTSIDER_IDS, investigator: MINION_IDS };
 
 mkdirSync(SHOTS, { recursive: true });
 
@@ -158,25 +161,30 @@ const test = async (name, fn) => {
 // Cibles choisies par chaque rôle pendant la partie de démonstration
 const chooseTargets = (role, st) => {
   const alive = st.players.filter((p) => p.alive);
-  const me = alive.find((p) => p.role === role);
+  const me = alive.find((p) => holds(p, role));
   const others = alive.filter((p) => p.id !== me?.id);
   const imp = alive.find((p) => p.role === 'imp');
-  const good = others.filter((p) => TOWNSFOLK.includes(p.role) || OUTSIDERS.includes(p.role));
+  const good = others.filter((p) => TOWNSFOLK_IDS.includes(p.role) || OUTSIDER_IDS.includes(p.role));
   const names = (list) => list.map((p) => p.name);
   switch (role) {
     case 'poisoner': return names(good.filter((p) => p.role !== 'fortuneteller').slice(-1));
     case 'washerwoman':
     case 'librarian':
-    case 'investigator': return names(others.slice(0, 2));
+    case 'investigator': {
+      // Le Conteur montre deux joueurs dont l'un a un rôle de la bonne catégorie
+      const match = others.find((p) => STARTING_INFO[role].includes(p.role));
+      if (!match) return [];
+      return names([match, others.find((p) => p.id !== match.id)]);
+    }
     case 'fortuneteller': return names([imp, good.find((p) => !p.decoy)]);
     case 'butler': return names(good.slice(0, 1));
     case 'monk': return names(good.filter((p) => p.role !== 'ravenkeeper').slice(0, 1));
     case 'imp': {
-      const prey = good.filter((p) => !p.protected && p.role !== 'soldier');
+      const prey = good.filter((p) => !p.protected && !['soldier', 'mayor'].includes(p.role));
       return names([prey.find((p) => p.role === 'ravenkeeper') ?? prey.at(-1)]);
     }
     case 'ravenkeeper': return names([imp]);
-    case 'slayer': return names(others.filter((p) => MINIONS.includes(p.role)).slice(0, 1));
+    case 'slayer': return names(others.filter((p) => MINION_IDS.includes(p.role)).slice(0, 1));
     default: return [];
   }
 };
@@ -187,8 +195,8 @@ const playPhase = async (phase, { skip = [], onSelected = {} } = {}) => {
     const st = await state();
     // Le Gardien ne se réveille que la nuit où il est tué
     const expectedActive = !(step.minPlayers && st.players.length < step.minPlayers) && (step.role === null || (step.role === 'ravenkeeper'
-      ? st.players.some((p) => p.role === 'ravenkeeper' && p.id === st.killedTonightId)
-      : st.players.some((p) => p.alive && p.role === step.role)));
+      ? st.players.some((p) => holds(p, 'ravenkeeper') && p.id === st.killedTonightId)
+      : st.players.some((p) => p.alive && holds(p, step.role))));
     const el = page.locator('.night-step', { hasText: step.action });
     const active = await el.evaluate((e) => e.style.opacity === '1');
     assert.equal(active, expectedActive, `étape « ${step.action} » active`);
@@ -236,9 +244,9 @@ await test('distribution des rôles conforme à la répartition officielle', asy
   const baron = roles.includes('baron');
   assert.equal(new Set(roles).size, 8, 'rôles tous différents');
   assert.equal(count(['imp']), 1);
-  assert.equal(count(MINIONS), 1);
-  assert.equal(count(OUTSIDERS), baron ? 3 : 1);
-  assert.equal(count(TOWNSFOLK), baron ? 3 : 5);
+  assert.equal(count(MINION_IDS), 1);
+  assert.equal(count(OUTSIDER_IDS), baron ? 3 : 1);
+  assert.equal(count(TOWNSFOLK_IDS), baron ? 3 : 5);
   assert.equal(players.filter((p) => p.decoy).length, roles.includes('fortuneteller') ? 1 : 0, 'Leurre de la Voyante');
   assert.match(await journal(), /Rôles distribués : \d Villageois, \d Étrangers, 1 Sbires, 1 Démon/);
   console.log(`    rôles : ${players.map((p) => `${p.name}=${p.role}${p.decoy ? '(leurre)' : ''}`).join(', ')}`);
@@ -458,7 +466,28 @@ await test('bluffs du Démon : 3 rôles gentils absents de la partie, seulement 
     const draws = Array.from({ length: 30 }, () => pickDemonBluffs(seven, shuffleArray));
     const sevenViews = views(seven, draws[0]);
     const sixViews = views(six, pickDemonBluffs(six, shuffleArray));
+    // Succession : le Démon d'origine est mort, la Confidente (J2) a pris sa place
+    const succession = make(['dead', 'imp', 'poisoner', 'chef', 'empath', 'mayor', 'saint']).map((p) => (p.id === 1 ? { ...p, alive: false } : p));
+    const frozen = buildRelayState({
+      players: succession, demonBluffs: [], bluffShares: {}, evilInfo: { demonId: 1, minionIds: [2, 3] }, spyGrimoire: null,
+      currentTime: 'NUIT', currentNight: 3, roleAssigned: true, joinOpen: false, gameEnd: null, deadAtNightStart: [1],
+      nightLog: [], activeAction: null, actorId: null, selectedTargets: [], day: null,
+    }).views;
+    // Demandes envoyées aux joueurs pendant une action
+    const prompts = (role, type) => buildRelayState({
+      players: make(['imp', 'washerwoman', 'fortuneteller', 'butler', 'poisoner', 'mayor', 'saint']).map((p) => (p.id === 6 ? { ...p, alive: false } : p)),
+      demonBluffs: [], bluffShares: {}, currentTime: 'NUIT', currentNight: 2, roleAssigned: true, joinOpen: false, gameEnd: null,
+      deadAtNightStart: [6], nightLog: [], activeAction: { role, type, action: 'x' }, actorId: { washerwoman: 2, fortuneteller: 3, butler: 4 }[role],
+      selectedTargets: [], day: null,
+    }).views;
     return {
+      washerwomanPrompt: prompts('washerwoman', 'select_two_info').k2.prompt,
+      fortuneTellerTargets: prompts('fortuneteller', 'select_two').k3.prompt.selectable,
+      butlerTargets: prompts('butler', 'select_one_master').k4.prompt.selectable,
+      otherMinionSees: frozen.k3.known,
+      newDemonSeesSelf: frozen.k2.known[2],
+      sevenMinionSeesDemon: sevenViews.k2.known[1],
+      sevenDemonSeesMinion: sevenViews.k1.known[2],
       sizes: [...new Set(draws.map((d) => d.length))],
       allGood: draws.flat().every((id) => good.includes(id)),
       noneInPlay: draws.flat().every((id) => !cast.includes(id) && id !== 'monk'),
@@ -481,6 +510,195 @@ await test('bluffs du Démon : 3 rôles gentils absents de la partie, seulement 
   assert.equal(check.sevenMinionBluffs, 0, 'le Sbire ne reçoit pas les bluffs d\'office');
   assert.equal(check.sixDemonKnows, 1, 'à 6, le Démon ne connaît que lui-même');
   assert.equal(check.sixMinionKnows, 1, 'à 6, le Sbire ne connaît que lui-même');
+  assert.deepEqual(check.sevenMinionSeesDemon, { role: 'imp' });
+  assert.deepEqual(check.sevenDemonSeesMinion, { team: 'minion' }, 'le Démon sait qui est Sbire, pas quel Sbire');
+  // Une succession reste secrète : l'autre Sbire voit toujours l'ancien Démon, et la Confidente comme Sbire
+  assert.deepEqual(check.otherMinionSees, { 1: { role: 'imp' }, 2: { team: 'minion' }, 3: { role: 'poisoner' } });
+  assert.deepEqual(check.newDemonSeesSelf, { role: 'imp' });
+  assert.equal(check.washerwomanPrompt, null, 'la Lavandière ne choisit pas elle-même les deux joueurs');
+  assert.deepEqual(check.fortuneTellerTargets, [1, 2, 3, 4, 5, 6, 7], 'la Voyante peut désigner un mort ou elle-même');
+  assert.deepEqual(check.butlerTargets, [1, 2, 3, 5, 6, 7], 'le Majordome ne peut pas se désigner');
+});
+
+const startOfGame = { currentNight: 1, nightLog: [{ night: 1, events: [] }], isStarted: false };
+const stepOpacity = (action) => page.locator('.night-step', { hasText: action }).evaluate((e) => e.style.opacity);
+
+await test('Lavandière : le Conteur montre deux joueurs dont un Villageois, sans dire lequel', async () => {
+  await loadGame(['imp', 'washerwoman', 'chef', 'empath', 'poisoner', 'saint', 'butler'], startOfGame);
+  await page.locator('.night-step', { hasText: actionOf('first', 'washerwoman') }).click();
+  const confirm = page.getByRole('button', { name: '✓ Confirmer' });
+  await token('Alice').click();
+  await token('Emma').click();
+  assert.match(await page.locator('.target-error').innerText(), /doit être un Villageois/);
+  assert.ok(await confirm.isDisabled(), 'deux joueurs sans Villageois : refusé');
+  await token('Bruno').click();
+  assert.match(await page.locator('.target-error').innerText(), /lui-même/);
+  assert.ok(await confirm.isDisabled(), 'la Lavandière ne se montre pas elle-même');
+  // Chloé (Chef) et Emma (Empoisonneur) : un Villageois et un leurre
+  await token('Chloé').click();
+  await token('Emma').click();
+  assert.equal(await page.locator('.target-error').count(), 0);
+  await confirm.click();
+  await settle();
+  // Le joueur apprend le rôle, pas lequel des deux le détient
+  assert.match(await journal(), /Lavandière apprend que (Emma ou Chloé|Chloé ou Emma) est Chef/);
+  assert.equal((await state()).completedActions.length, 1);
+});
+
+await test('Libraire : apprend « 0 » quand aucun Étranger n\'est en jeu', async () => {
+  await loadGame(['imp', 'librarian', 'chef', 'empath', 'poisoner', 'mayor', 'soldier'], startOfGame);
+  await playStep(actionOf('first', 'librarian'));
+  assert.equal(await page.getByText('Sélectionnez').count(), 0, 'aucun joueur à désigner');
+  assert.match(await journal(), /Libraire apprend qu'il n'y a aucun Étranger en jeu/);
+  assert.equal((await state()).completedActions.length, 1);
+});
+
+await test('Ermite et Espion sont vus sous le rôle choisi par le Conteur', async () => {
+  // L'Ermite passe pour un Baron auprès de l'Enquêteur
+  await loadGame(['imp', 'investigator', { role: 'recluse', seenAs: 'baron' }, 'empath', 'chef', 'mayor', 'soldier'], startOfGame);
+  await playStep(actionOf('first', 'investigator'), ['Chloé', 'David']);
+  assert.match(await journal(), /Enquêteur apprend que (Chloé ou David|David ou Chloé) est Baron/);
+
+  // Cercle : Démon, Ermite vu comme Démon, Chef, ..., Empoisonneur (voisin du Démon) : 2 paires
+  await loadGame(['imp', { role: 'recluse', seenAs: 'imp' }, 'chef', 'empath', 'mayor', 'soldier', 'poisoner'], startOfGame);
+  await playStep(actionOf('first', 'chef'));
+  assert.match(await journal(), /Le Chef détecte 2 paire/);
+
+  // L'Espion vu comme Villageois n'est pas compté par l'Empathe
+  await loadGame(['imp', 'empath', { role: 'spy', seenAs: 'chef' }, 'mayor', 'soldier', 'saint', 'butler']);
+  await playStep(actionOf('other', 'empath'));
+  assert.match(await journal(), /L'Empathe détecte 1 voisin/);
+
+  // Le réglage se fait sur la fiche du joueur
+  await token('Chloé').click();
+  await page.locator('.seen-as select').selectOption({ label: 'Espion (son vrai rôle)' });
+  await settle();
+  assert.equal((await state()).players[2].seenAs, null);
+  await page.locator('.grimoire-section').click({ position: { x: 5, y: 5 } });
+});
+
+await test('le Mercenaire tue un Ermite vu comme Démon, sans terminer la partie', async () => {
+  await loadGame(['imp', 'slayer', { role: 'recluse', seenAs: 'imp' }, 'empath', 'poisoner', 'saint'], { currentTime: 'JOUR' });
+  await playStep(actionOf('day', 'slayer'), ['Chloé']);
+  assert.equal((await state()).players[2].alive, false);
+  assert.match(await journal(), /Ermite vu comme Démon/);
+  assert.equal(await page.getByText(/Victoire/).count(), 0);
+});
+
+await test('le Soûlard est réveillé comme le Villageois qu\'il croit être, sans effet', async () => {
+  await loadGame(['imp', { role: 'drunk', shownRole: 'empath' }, 'chef', 'poisoner', 'mayor', 'saint']);
+  assert.equal(await stepOpacity(actionOf('other', 'empath')), '1', 'étape de l\'Empathe active pour le Soûlard');
+  await playStep(actionOf('other', 'empath'));
+  const [event] = (await state()).nightLog[0].events;
+  assert.match(event.text, /L'Empathe \(empoisonné\/ivre\)/);
+  assert.equal(event.isFalse, true);
+  assert.equal(event.to, 2, 'information destinée au Soûlard');
+  // Le Conteur voit sur le grimoire le rôle que le Soûlard croit avoir
+  assert.match(await token('Bruno').innerText(), /croit être Empathe/);
+
+  await loadGame(['imp', { role: 'drunk', shownRole: 'monk' }, 'chef', 'poisoner', 'mayor', 'saint']);
+  await playStep(actionOf('other', 'monk'), ['Chloé']);
+  assert.equal((await state()).players[2].protected, false, 'le Soûlard « Moine » ne protège personne');
+});
+
+await test('la Voyante reçoit un OUI en désignant un Démon mort', async () => {
+  await loadGame([{ role: 'dead', alive: false }, 'fortuneteller', 'chef', 'empath', 'imp', 'saint']);
+  await playStep(actionOf('other', 'fortuneteller'), ['Alice', 'Chloé']);
+  assert.match(await journal(), /Voyante vérifie Alice et Chloé: Il y a un démon/);
+});
+
+await test('le Démon : protégé il ne peut pas se suicider, et viser un mort est sans effet', async () => {
+  await loadGame([{ role: 'imp', protected: true }, 'poisoner', 'chef', 'empath', 'mayor', 'saint']);
+  await playStep(actionOf('other', 'imp'), ['Alice']);
+  let st = await state();
+  assert.equal(st.players[0].alive, true);
+  assert.equal(st.players[1].role, 'poisoner');
+  assert.match(await journal(), /Alice était protégé/);
+
+  await loadGame(['imp', 'poisoner', { role: 'ravenkeeper', alive: false }, 'empath', 'chef', 'saint']);
+  await playStep(actionOf('other', 'imp'), ['Chloé']);
+  st = await state();
+  assert.equal(st.killedTonightId, null);
+  assert.match(await journal(), /déjà mort : aucun mort cette nuit/);
+  assert.equal(await stepOpacity(actionOf('other', 'ravenkeeper')), '0.4', 'le Gardien mort n\'est pas réveillé');
+});
+
+await test('Maire attaqué de nuit : le Conteur peut faire mourir un autre joueur', async () => {
+  await loadGame(['imp', 'mayor', 'ravenkeeper', 'empath', 'poisoner', 'saint']);
+  await playStep(actionOf('other', 'imp'), ['Bruno']);
+  assert.match(await page.locator('.choice-modal').innerText(), /Le Démon attaque Bruno \(Maire\)/);
+  assert.equal((await state()).completedActions.length, 0, 'en attente de la décision du Conteur');
+  await page.getByRole('button', { name: 'Chloé meurt à sa place' }).click();
+  await settle();
+  const st = await state();
+  assert.equal(st.players[1].alive, true);
+  assert.equal(st.players[2].alive, false);
+  assert.equal(st.killedTonightId, 3);
+  assert.equal(st.completedActions.length, 1);
+  assert.equal(await stepOpacity(actionOf('other', 'ravenkeeper')), '1', 'le Gardien mort à la place du Maire est réveillé');
+
+  await loadGame(['imp', 'mayor', 'ravenkeeper', 'empath', 'poisoner', 'saint']);
+  await playStep(actionOf('other', 'imp'), ['Bruno']);
+  await page.getByRole('button', { name: 'Le Maire meurt' }).click();
+  await settle();
+  assert.equal((await state()).players[1].alive, false);
+});
+
+await test('un joueur que le Conteur fait mourir la nuit réveille le Gardien', async () => {
+  await loadGame(['imp', 'ravenkeeper', 'chef', 'empath', 'poisoner', 'saint']);
+  await token('Bruno').click();
+  await page.getByRole('button', { name: 'Vivant' }).click();
+  await page.locator('.grimoire-section').click({ position: { x: 5, y: 5 } });
+  await settle();
+  assert.equal((await state()).killedTonightId, 2);
+  assert.equal(await stepOpacity(actionOf('other', 'ravenkeeper')), '1');
+});
+
+await test('le poison cesse dès que l\'Empoisonneur meurt', async () => {
+  await loadGame(['imp', 'poisoner', 'chef', 'empath', 'mayor', 'saint']);
+  await playStep(actionOf('other', 'poisoner'), ['Chloé']);
+  assert.equal((await state()).players[2].poisoned, true);
+  await playStep(actionOf('other', 'imp'), ['Bruno']);
+  const st = await state();
+  assert.equal(st.players[1].alive, false);
+  assert.equal(st.players[2].poisoned, false);
+});
+
+await test('la protection du Moine prend fin au lever du jour', async () => {
+  await loadGame(['imp', 'monk', 'chef', 'empath', 'poisoner', 'saint']);
+  await playStep(actionOf('other', 'monk'), ['Chloé']);
+  assert.equal((await state()).players[2].protected, true);
+  await page.getByRole('button', { name: '☀️ Nouvelle Journée' }).click();
+  await settle();
+  assert.equal((await state()).players[2].protected, false);
+});
+
+await test('Vierge : nominée par un Villageois, celui-ci est exécuté et la journée s\'arrête', async () => {
+  const virginStep = nightOrder.day.find((s) => s.role === 'virgin').action;
+  await loadGame(['imp', 'virgin', 'chef', 'empath', 'poisoner', 'saint', 'mayor'], { currentTime: 'JOUR' });
+  await playStep(virginStep, ['Chloé']);
+  let st = await state();
+  assert.equal(st.players[2].alive, false);
+  assert.equal(st.players[2].executed, true);
+  assert.equal(st.players[1].used, true);
+  assert.equal(st.currentTime, 'NUIT', 'c\'est l\'exécution du jour');
+
+  // Nominée par un joueur qui n'est pas Villageois : rien ne se passe, mais la capacité est dépensée
+  await loadGame(['imp', 'virgin', 'chef', 'empath', 'poisoner', 'saint', 'mayor'], { currentTime: 'JOUR' });
+  await playStep(virginStep, ['Emma']);
+  st = await state();
+  assert.equal(st.players[4].alive, true);
+  assert.equal(st.players[1].used, true);
+  assert.equal(st.currentTime, 'JOUR');
+  assert.match(await journal(), /Emma nomine la Vierge : rien ne se passe/);
+});
+
+await test('le Majordome ne peut pas se choisir lui-même comme Maître', async () => {
+  await loadGame(['imp', 'butler', 'chef', 'empath', 'poisoner', 'mayor']);
+  await page.locator('.night-step', { hasText: actionOf('other', 'butler') }).click();
+  await token('Bruno').click();
+  assert.ok(await page.getByRole('button', { name: '✓ Confirmer' }).isDisabled());
+  await page.getByRole('button', { name: '✕ Annuler' }).click();
 });
 
 await test('le Moine protège sa cible de l\'attaque du Démon', async () => {
@@ -662,9 +880,9 @@ await test('répartition officielle de 5 à 15 joueurs', async () => {
     assert.equal(roles.length, n);
     assert.equal(new Set(roles).size, n, `${n} joueurs : rôles uniques`);
     assert.equal(count(['imp']), 1, `${n} joueurs : un Démon`);
-    assert.equal(count(MINIONS), minions[n - 5], `${n} joueurs : Sbires`);
-    assert.equal(count(OUTSIDERS), outsiders[n - 5] + bonus, `${n} joueurs : Étrangers`);
-    assert.equal(count(TOWNSFOLK), n - 1 - minions[n - 5] - outsiders[n - 5] - bonus, `${n} joueurs : Villageois`);
+    assert.equal(count(MINION_IDS), minions[n - 5], `${n} joueurs : Sbires`);
+    assert.equal(count(OUTSIDER_IDS), outsiders[n - 5] + bonus, `${n} joueurs : Étrangers`);
+    assert.equal(count(TOWNSFOLK_IDS), n - 1 - minions[n - 5] - outsiders[n - 5] - bonus, `${n} joueurs : Villageois`);
   }
   assert.equal(await page.getByRole('button', { name: '+ Ajouter un joueur' }).count(), 0, 'limite de 15 joueurs');
   await shot('09-quinze-joueurs');
@@ -821,12 +1039,16 @@ await test('chaque joueur ne voit que son rôle ; le camp du Mal se connaît', a
     await until(async () => (await p.locator('.role-name').count()) === 1 && (await text(p, '.role-name')) === EXPECTED_ROLES[name], `rôle de ${name}`);
     const known = Object.keys(await knownRoles(p)).sort();
     const evil = ['Bruno', 'David'].includes(name);
-    assert.deepEqual(known, evil ? ['Bruno', 'David'] : [name], `rôles connus de ${name}`);
+    assert.deepEqual(known, name === 'David' ? ['Bruno', 'David'] : [name], `rôles connus de ${name}`);
     assert.match(await text(p, '.role-team'), evil ? /camp du Mal/ : /camp du Village/);
     assert.equal(await p.locator('.bluffs').count(), name === 'Bruno' ? 1 : 0, 'seul le Démon reçoit des bluffs');
     assert.equal(await p.locator('.grimoire-note').count(), 0);
   });
   assert.deepEqual(await knownRoles(seats.David), { Bruno: 'imp', David: 'poisoner' });
+  // Le Démon sait qui est son Sbire, sans connaître son rôle
+  assert.equal(await seat(seats.Bruno, 'David').getAttribute('data-team'), 'minion');
+  assert.equal(await seat(seats.Bruno, 'David').locator('.seat-role').innerText(), 'Sbire');
+  assert.equal(await seats.Alice.locator('.seat[data-team="minion"]').count(), 0);
   const { demonBluffs, players } = await hostState();
   assert.equal(demonBluffs.length, 3);
   assert.ok(demonBluffs.every((id) => !players.some((pl) => pl.role === id)), 'bluffs absents de la partie');
@@ -1007,10 +1229,19 @@ await test('une mort de nuit reste secrète jusqu\'au lever du jour', async () =
   assert.equal((await hostPlayer('Gaëlle')).alive, false);
 
   // Le Gardien, tué cette nuit, désigne un joueur et apprend son rôle
-  await hostStep('Le Gardien (si tué cette nuit)');
+  await hostStep('Le Gardien (s\'il meurt cette nuit)');
   await playerPicks('Gaëlle', ['Bruno']);
   await hostConfirm();
   await until(async () => /Le Gardien apprend que Bruno est Démon/.test(await text(seats.Gaëlle)), 'information du Gardien');
+
+  // Le Majordome choisit son Maître : il ne peut pas se désigner lui-même
+  await hostStep('Le Majordome choisit son Maître');
+  await seats.Alice.locator('.prompt').waitFor();
+  await seat(seats.Alice, 'Alice').click();
+  assert.ok(await seats.Alice.getByRole('button', { name: '✓ Valider mon choix' }).isDisabled());
+  await playerPicks('Alice', ['Chloé']);
+  await hostConfirm();
+  assert.equal((await hostPlayer('Chloé')).master, true);
 
   await everyPlayer(async (p, name) => {
     assert.equal(await seat(p, 'Gaëlle').getAttribute('data-alive'), 'true', `${name} ne sait pas encore que Gaëlle est morte`);
@@ -1030,15 +1261,25 @@ await test('à la fin du débat, les nominations s\'ouvrent d\'elles-mêmes', as
 });
 
 await test('un mort ne dispose que d\'un seul vote pour le reste de la partie', async () => {
+  // Le jeton de vote des morts est visible de tous
+  assert.equal(await seat(seats.Hugo, 'Emma').locator('.ghost-vote').count(), 1);
   await nominateFrom('Alice', 'Bruno');
   await until(async () => /unique vote/.test(await text(seats.Emma, '.day-panel')), 'rappel du vote de mort');
   await vote('Emma', true);
   await vote('Gaëlle', false);
-  for (const name of ['Alice', 'Chloé', 'Farid']) await vote(name, true);
+  // Alice, Majordome, ne peut voter « Oui » qu'après son Maître, Chloé
+  assert.match(await text(seats.Alice, '.master-vote'), /Chloé, n'a pas encore voté/);
+  assert.ok(await seats.Alice.locator('.vote-yes').isDisabled());
+  await vote('Chloé', true);
+  await until(async () => seats.Alice.locator('.vote-yes').isEnabled(), 'le Majordome peut suivre son Maître');
+  assert.match(await text(seats.Alice, '.master-vote'), /a voté Oui/);
+  for (const name of ['Alice', 'Farid']) await vote(name, true);
   for (const name of ['Bruno', 'David', 'Hugo']) await vote(name, false);
   await until(async () => /Bruno : 4 voix \(Alice, Chloé, Emma, Farid\) — condamné/.test(await text(seats.Hugo, '.day-panel')), 'Bruno condamné');
   assert.equal((await hostPlayer('Emma')).ghostUsed, true, 'Emma a dépensé son vote');
   assert.equal((await hostPlayer('Gaëlle')).ghostUsed, false, 'un « Non » ne dépense pas le vote');
+  await until(async () => (await seat(seats.Hugo, 'Emma').locator('.ghost-vote').count()) === 0, 'jeton de vote d\'Emma dépensé');
+  assert.equal(await seat(seats.Hugo, 'Gaëlle').locator('.ghost-vote').count(), 1);
 
   // Vote suivant : Emma ne peut plus voter, Gaëlle le peut encore ; le Conteur clôt sans attendre tout le monde
   await nominateFrom('Chloé', 'David');
@@ -1088,13 +1329,13 @@ await test('fin de partie : tous les joueurs voient le vainqueur et les rôles',
   await host.getByRole('button', { name: 'Continuer' }).click({ force: true });
 });
 
-await test('l\'Espion voit tout le grimoire ; le Soûlard se croit Villageois', async () => {
+await test('l\'Espion voit le grimoire quand il le consulte ; le Soûlard se croit Villageois', async () => {
   await host.getByRole('button', { name: 'Recommencer' }).click();
   await until(async () => /pas encore distribué/.test(await text(seats.Alice, '.my-role')), 'partie remise à zéro chez les joueurs');
   // Rôles imposés dans la sauvegarde du Conteur, les joueurs restant connectés
   await host.evaluate((k) => {
     const game = JSON.parse(localStorage.getItem(k));
-    const cast = ['spy', 'imp', 'fortuneteller', 'chef', 'drunk', 'empath', 'ravenkeeper', 'slayer'];
+    const cast = ['spy', 'imp', 'fortuneteller', 'chef', 'drunk', 'empath', 'virgin', 'slayer'];
     game.players = game.players.map((pl, i) => ({
       ...pl, role: cast[i], shownRole: cast[i] === 'drunk' ? 'monk' : null, poisoned: pl.name === 'Hugo',
     }));
@@ -1106,18 +1347,49 @@ await test('l\'Espion voit tout le grimoire ; le Soûlard se croit Villageois', 
   if (fallbackCss) await host.addStyleTag({ content: fallbackCss });
 
   const { Alice: spy, Emma: drunk } = seats;
-  await until(async () => (await spy.locator('.grimoire-note').count()) === 1, 'vue de l\'Espion');
+  // Avant sa consultation, l'Espion ne connaît que son camp
+  await until(async () => (await spy.locator('.role-name').count()) === 1, 'rôle de l\'Espion');
+  assert.equal(await spy.locator('.grimoire-note').count(), 0);
+  assert.deepEqual(await knownRoles(spy), { Alice: 'spy', Bruno: 'imp' });
+
+  await hostStep('L\'Espion consulte le Grimoire');
+  await until(async () => (await spy.locator('.grimoire-note').count()) === 1, 'grimoire consulté');
   assert.deepEqual(await knownRoles(spy), {
-    Alice: 'spy', Bruno: 'imp', Chloé: 'fortuneteller', David: 'chef', Emma: 'drunk', Farid: 'empath', Gaëlle: 'ravenkeeper', Hugo: 'slayer',
+    Alice: 'spy', Bruno: 'imp', Chloé: 'fortuneteller', David: 'chef', Emma: 'drunk', Farid: 'empath', Gaëlle: 'virgin', Hugo: 'slayer',
   });
   assert.match(await seat(spy, 'Hugo').innerText(), /☠️/, 'l\'Espion voit qui est empoisonné');
+
+  // Ce qui change ensuite n'apparaît pas avant sa prochaine consultation
+  await host.locator('.player-token', { hasText: 'Farid' }).click();
+  await host.getByText('☠️ Empoisonné').click();
+  await host.locator('.grimoire-section').click({ position: { x: 5, y: 5 } });
+  await until(async () => (await hostPlayer('Farid')).poisoned === true, 'Farid empoisonné chez le Conteur');
+  await host.waitForTimeout(400);
+  assert.doesNotMatch(await seat(spy, 'Farid').innerText(), /☠️/, 'le grimoire de l\'Espion n\'est pas en direct');
 
   await until(async () => (await drunk.locator('.role-name').count()) === 1, 'rôle du Soûlard');
   assert.equal(await text(drunk, '.role-name'), 'Moine');
   assert.match(await text(drunk, '.role-team'), /Villageois · camp du Village/);
   assert.deepEqual(await knownRoles(drunk), { Emma: 'monk' });
   assert.doesNotMatch(await text(drunk), /Soûlard/);
-  assert.deepEqual(await knownRoles(seats.Bruno), { Alice: 'spy', Bruno: 'imp' }, 'le Démon connaît son Sbire');
+  assert.deepEqual(await knownRoles(seats.Bruno), { Bruno: 'imp' });
+  assert.equal(await seat(seats.Bruno, 'Alice').getAttribute('data-team'), 'minion', 'le Démon connaît son Sbire');
+});
+
+await test('Vierge nominée à l\'écran par un Villageois : il est exécuté sans vote', async () => {
+  await host.getByRole('button', { name: '☀️ Nouvelle Journée' }).click();
+  await host.getByRole('button', { name: 'Ouvrir les nominations' }).click();
+  await until(async () => /Nominations ouvertes/.test(await text(seats.David, '.day-panel')), 'nominations ouvertes');
+  // David (Chef, Villageois) nomine Gaëlle (Vierge)
+  await nominateFrom('David', 'Gaëlle');
+  await everyPlayer(async (p, name) => {
+    await until(async () => (await seat(p, 'David').getAttribute('data-alive')) === 'false', `exécution de David vue par ${name}`);
+    await until(async () => /Nuit 2/.test(await text(p, '.phase')), `la journée s'arrête pour ${name}`);
+    assert.equal(await p.locator('.vote-yes').count(), 0, 'aucun vote ouvert');
+  });
+  const st = await hostState();
+  assert.equal(st.players.find((pl) => pl.name === 'Gaëlle').used, true);
+  assert.equal(st.players.find((pl) => pl.name === 'David').executed, true);
 });
 
 await test('le Conteur retire un joueur : il est déconnecté de la partie', async () => {

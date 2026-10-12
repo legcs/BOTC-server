@@ -1,5 +1,5 @@
 import { roles } from '../data/roles';
-import { isEvilRole } from './roleUtils';
+import { isEvilRole, seenCategory } from './roleUtils';
 
 // Mélange de Fisher-Yates (non biaisé)
 export const shuffleArray = (arr) => {
@@ -58,6 +58,7 @@ export const assignRoles = (players) => {
     master: false,
     used: false,
     ghostUsed: false,
+    seenAs: null,
     notes: '',
     // Le Soûlard croit être un Villageois absent de la partie
     shownRole: rolePool[index]?.id === 'drunk' ? drunkBelief?.id ?? null : null,
@@ -74,9 +75,16 @@ export const assignRoles = (players) => {
 
 export const canUseAbility = (player) => {
   if (!player) return false;
+  // Le Soûlard n'a aucune capacité, quel que soit le rôle qu'il croit avoir
+  if (player.role === 'drunk') return false;
   if (player.poisoned || player.ivre) return false;
   return true;
 };
+
+// La Vierge exécute son nominateur s'il est (vu comme) Villageois, la première fois qu'elle est nominée
+export const virginTriggers = (virgin, nominator) =>
+  !!virgin && !!nominator && virgin.role === 'virgin' && virgin.alive && !virgin.used
+  && canUseAbility(virgin) && seenCategory(nominator) === 'townsfolk';
 
 // Si le Démon est mort et que la Confidente peut prendre sa place, retourne les joueurs mis à jour.
 // Le décompte des 5 joueurs vivants inclut le Démon qui vient de mourir (donc 4 après sa mort).
@@ -114,11 +122,6 @@ export const getVictory = (players) => {
 
   if (imp && alivePlayers.length <= 2) {
     return { winner: 'evil', reason: 'Il ne reste que 2 joueurs dont le Démon.' };
-  }
-
-  const aliveEvil = alivePlayers.filter(p => isEvilRole(p.role));
-  if (aliveEvil.length === 0 && alivePlayers.length > 0 && players.some(p => isEvilRole(p.role))) {
-    return { winner: 'village', reason: 'Tous les joueurs maléfiques sont morts.' };
   }
 
   return null;

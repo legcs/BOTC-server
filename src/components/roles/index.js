@@ -12,6 +12,7 @@ import { handleUndertakerAction } from './undertaker';
 import { handleWasherwomanAction } from './washerwoman';
 import { handleSpyAction } from './spy';
 import { handleSlayerAction } from './slayer';
+import { handleVirginAction } from './virgin';
 
 // Capacités résolues automatiquement, indexées par id de rôle
 export const roleHandlers = {
@@ -29,4 +30,5 @@ export const roleHandlers = {
   washerwoman: handleWasherwomanAction,
   spy: handleSpyAction,
   slayer: handleSlayerAction,
+  virgin: handleVirginAction,
 };

@@ -1,13 +1,13 @@
 import React from 'react';
 import { allRoles } from '../data/roles';
 
-function ActionControlPanel({ activeAction, selectedTargets, remoteActor = null, onConfirm, onCancel }) {
+function ActionControlPanel({ activeAction, selectedTargets, remoteActor = null, error = null, onConfirm, onCancel }) {
   if (!activeAction) return null;
 
-  const canConfirm = 
+  const canConfirm = !error && (
     (activeAction.type.includes('two') && selectedTargets.length === 2) ||
     (activeAction.type.includes('one') && selectedTargets.length === 1) ||
-    activeAction.type === 'auto';
+    activeAction.type === 'auto');
 
   return (
     <div style={{
@@ -41,10 +41,16 @@ function ActionControlPanel({ activeAction, selectedTargets, remoteActor = null,
         color: '#8b7355',
         textAlign: 'center',
       }}>
-        {activeAction.type.includes('two') 
-          ? `Sélectionnez 2 joueurs (${selectedTargets.length}/2)`
-          : 'Sélectionnez un joueur'}
+        {activeAction.type === 'select_two_info'
+          ? `Sélectionnez les 2 joueurs à lui montrer (${selectedTargets.length}/2)`
+          : activeAction.type.includes('two')
+            ? `Sélectionnez 2 joueurs (${selectedTargets.length}/2)`
+            : 'Sélectionnez un joueur'}
       </div>
+
+      {error && (
+        <div className="target-error" style={{ fontSize: '0.8rem', color: '#ff8a8a', textAlign: 'center' }}>{error}</div>
+      )}
 
       {remoteActor && (
         <div style={{ fontSize: '0.8rem', color: canConfirm ? '#4ade80' : '#b8a88a', textAlign: 'center' }}>

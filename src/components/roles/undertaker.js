@@ -1,6 +1,6 @@
 import { playableRoles } from '../../data/roles';
 import { canUseAbility, pickRandom } from '../../utils/gameLogic';
-import { getRoleName } from '../../utils/roleUtils';
+import { getRoleName, seenRole } from '../../utils/roleUtils';
 
 export const handleUndertakerAction = ({ players, actor, lastExecutedPlayerId, addNightEvent, actionKey }) => {
   const executedPlayer = players.find(p => p.id === lastExecutedPlayerId);
@@ -16,7 +16,7 @@ export const handleUndertakerAction = ({ players, actor, lastExecutedPlayerId, a
     );
   } else {
     addNightEvent(
-      `⚰️ Le Croque-mort apprend que ${executedPlayer.name} était ${getRoleName(executedPlayer.role)}`,
+      `⚰️ Le Croque-mort apprend que ${executedPlayer.name} était ${getRoleName(seenRole(executedPlayer))}`,
       actionKey
     );
   }

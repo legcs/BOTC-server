@@ -9,6 +9,7 @@ export const handleImpAction = ({
   actionKey,
   setPlayers,
   onNightDeath,
+  ask,
 }) => {
   const target = targets[0];
   if (!target || !actor) return;
@@ -18,25 +19,51 @@ export const handleImpAction = ({
     return;
   }
 
-  if (target.id === actor.id) {
-    impSuicide({ players, actor, addNightEvent, actionKey, setPlayers });
+  // Attaque d'un joueur, avec les protections qui s'appliquent à lui
+  const strike = (victim) => {
+    if (!victim.alive) {
+      addNightEvent(`👺 Le Démon attaque ${victim.name}, déjà mort : aucun mort cette nuit`, actionKey);
+      return;
+    }
+
+    // La protection du Moine vaut aussi quand le Démon se vise lui-même
+    if (victim.protected) {
+      addNightEvent(`🛡️ ${victim.name} était protégé ! Aucun mort cette nuit.`, actionKey);
+      return;
+    }
+
+    if (victim.id === actor.id) {
+      impSuicide({ players, actor, addNightEvent, actionKey, setPlayers });
+      return;
+    }
+
+    // Le Soldat empoisonné/ivre peut être tué
+    if (victim.role === 'soldier' && canUseAbility(victim)) {
+      addNightEvent(`🛡️ ${victim.name} (Soldat) résiste à l'attaque du Démon !`, actionKey);
+      return;
+    }
+
+    setPlayers(prev => prev.map(p => (p.id === victim.id ? { ...p, alive: false } : p)));
+    onNightDeath(victim.id);
+    addNightEvent(`👺 ${victim.name} a été tué par le Démon`, actionKey);
+  };
+
+  // Le Maire visé de nuit : le Conteur peut faire mourir un autre joueur à sa place
+  if (target.role === 'mayor' && target.alive && !target.protected && canUseAbility(target) && ask) {
+    ask({
+      title: `Le Démon attaque ${target.name} (Maire)`,
+      text: 'Si le Maire doit mourir la nuit, un autre joueur peut mourir à sa place.',
+      options: [
+        { label: 'Le Maire meurt', run: () => strike(target) },
+        ...players
+          .filter(p => p.alive && p.id !== target.id && p.id !== actor.id)
+          .map(p => ({ label: `${p.name} meurt à sa place`, run: () => strike(p) })),
+      ],
+    });
     return;
   }
 
-  if (target.protected) {
-    addNightEvent(`🛡️ ${target.name} était protégé ! Aucun mort cette nuit.`, actionKey);
-    return;
-  }
-
-  // Le Soldat empoisonné/ivre peut être tué
-  if (target.role === 'soldier' && canUseAbility(target)) {
-    addNightEvent(`🛡️ ${target.name} (Soldat) résiste à l'attaque du Démon !`, actionKey);
-    return;
-  }
-
-  setPlayers(prev => prev.map(p => (p.id === target.id ? { ...p, alive: false } : p)));
-  onNightDeath(target.id);
-  addNightEvent(`👺 ${target.name} a été tué par le Démon`, actionKey);
+  strike(target);
 };
 
 const impSuicide = ({ players, actor, addNightEvent, actionKey, setPlayers }) => {
