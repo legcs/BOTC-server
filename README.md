@@ -95,8 +95,9 @@ Chaque joueur ouvre le lien d'invitation (ou saisit le code du salon), entre son
 | Qui | Ce qu'il voit |
 | --- | --- |
 | Tous les joueurs | Le cercle, la phase en cours, qui est mort, son propre rôle et sa description |
-| Sbires et Démon | Les rôles de leurs complices |
-| Démon | Trois rôles absents de la partie, pour bluffer |
+| Sbires et Démon | Les rôles de leurs complices, à partir de 7 joueurs |
+| Démon | Trois bluffs (rôles gentils absents de la partie), à partir de 7 joueurs |
+| Sbires | Les bluffs que le Démon choisit de leur transmettre |
 | Espion | Tout le grimoire : rôles et statuts de chacun |
 | Soûlard | Un rôle de Villageois : il ignore qu'il est Soûlard |
 | Rôles à information | Le résultat de leur capacité, dans « Vos informations », sans indication d'empoisonnement |
@@ -106,6 +107,7 @@ Les droits suivent les règles du jeu :
 - **Capacités** : quand le Conteur réveille un rôle qui doit désigner des joueurs, la demande apparaît sur l'écran du joueur concerné. Il touche ses cibles et valide ; le Conteur confirme et l'application résout la capacité.
 - **Morts de la nuit** : elles restent secrètes jusqu'au lever du jour. Les exécutions sont visibles immédiatement.
 - **Discussion** : ouverte à tous le jour. La nuit, un joueur ne peut écrire qu'au Conteur, en privé ; le Conteur peut répondre en privé à n'importe quel joueur.
+- **Bluffs** : le Démon voit ses trois bluffs et transmet ceux de son choix à chaque Sbire, d'un clic ; il peut les reprendre. Comme dans le jeu, les Sbires ne reçoivent rien d'office. Le Conteur retrouve les trois bluffs dans son journal.
 - **Fin de partie** : le vainqueur et tous les rôles sont révélés à tout le monde.
 
 ### Débat et vote
@@ -125,7 +127,7 @@ Ici, la Voyante choisit les deux joueurs qu'elle veut sonder :
 
 ![Vue d'un joueur : la Voyante choisit ses cibles](Documentation/screenshots/13-multi-joueur.jpg)
 
-Le Démon, lui, connaît son Sbire et reçoit ses trois bluffs :
+Le Démon, lui, connaît son Sbire et reçoit ses trois bluffs, qu'il peut lui transmettre :
 
 <p>
   <img src="Documentation/screenshots/14-multi-demon.jpg" alt="Vue du Démon" width="72%">

@@ -16,8 +16,17 @@ const isEvil = (player) => isEvilRole(realRole(player));
 // Un joueur ne doit pas pouvoir déduire qu'il est empoisonné ou ivre
 const sanitize = (text) => text.replace(/\s*\((?:empoisonn|ivre)[^)]*\)/gi, '').trim();
 
+// Règle officielle : à moins de 7 joueurs, les Sbires et le Démon ne se connaissent pas
+// et le Démon ne reçoit pas de bluffs
+export const EVIL_INFO_MIN_PLAYERS = 7;
+export const evilInfoApplies = (players) => players.length >= EVIL_INFO_MIN_PLAYERS;
+
+export const isMinion = (player) => getRoleCategory(player.role) === 'minion';
+
 // Trois rôles gentils absents de la partie, que le Démon peut prétendre avoir
+// (ou conseiller à ses Sbires)
 export const pickDemonBluffs = (players, shuffle) => {
+  if (!evilInfoApplies(players)) return [];
   const inPlay = new Set(players.flatMap((p) => [p.role, p.shownRole]));
   const absent = [...roles.townsfolk, ...roles.outsiders].filter((r) => r.id !== 'unknown' && !inPlay.has(r.id));
   return shuffle(absent).slice(0, 3).map((r) => r.id);
@@ -93,6 +102,7 @@ const buildPrompt = (player, game) => {
 const buildView = (player, game) => {
   const evil = isEvil(player);
   const spy = player.role === 'spy';
+  const demon = realRole(player) === 'imp' && player.alive;
   const known = {};
 
   if (game.roleAssigned) {
@@ -108,8 +118,8 @@ const buildView = (player, game) => {
         };
       } else if (other.id === player.id) {
         known[other.id] = { role: believedRole(other) };
-      } else if (evil && isEvil(other)) {
-        // Les Sbires et le Démon se connaissent
+      } else if (evil && isEvil(other) && evilInfoApplies(game.players)) {
+        // Les Sbires et le Démon se connaissent (à partir de 7 joueurs)
         known[other.id] = { role: realRole(other) };
       }
     }
@@ -122,7 +132,13 @@ const buildView = (player, game) => {
     team: game.roleAssigned ? (evil ? 'evil' : 'good') : null,
     known,
     grimoire: spy && !game.gameEnd,
-    bluffs: realRole(player) === 'imp' && player.alive ? game.demonBluffs : [],
+    bluffs: demon ? game.demonBluffs : [],
+    // Le Démon choisit quels bluffs il transmet à quels Sbires
+    minions: demon ? game.players.filter(isMinion).map((p) => p.id) : [],
+    bluffShares: demon ? game.bluffShares : {},
+    sharedBluffs: isMinion(player)
+      ? game.demonBluffs.filter((role) => game.bluffShares[role]?.includes(player.id))
+      : [],
     infos: game.nightLog.flatMap((night) => night.events
       .filter((event) => event.to === player.id)
       .map((event) => ({ night: night.night, time: event.time, text: sanitize(event.text) }))),

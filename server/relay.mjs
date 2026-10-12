@@ -145,11 +145,11 @@ const handlers = {
     send(room.host, { t: 'targets', key, ids: msg.ids.slice(0, 2) });
   },
 
-  // Nomination ou vote d'un joueur, transmis au Conteur qui tient les comptes
+  // Nomination, vote ou partage de bluff d'un joueur, transmis au Conteur qui tient les comptes
   act(ws, msg) {
     const { room, role, key } = ws.session ?? {};
-    if (role !== 'player' || !['nominate', 'vote'].includes(msg.kind)) return;
-    send(room.host, { t: 'act', key, kind: msg.kind, id: msg.id, value: msg.value === true });
+    if (role !== 'player' || !['nominate', 'vote', 'bluff'].includes(msg.kind)) return;
+    send(room.host, { t: 'act', key, kind: msg.kind, id: msg.id, value: msg.value === true, role: String(msg.role ?? '') });
   },
 };
 

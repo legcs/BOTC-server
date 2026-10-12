@@ -11,7 +11,7 @@ import { loadGame, saveGame } from './utils/storage';
 
 // Imports du mode multijoueur
 import { useRelay } from './multiplayer/useRelay';
-import { buildRelayState, INFO_ROLES, pickDemonBluffs } from './multiplayer/views';
+import { buildRelayState, INFO_ROLES, isMinion, pickDemonBluffs } from './multiplayer/views';
 import { canBeNominated, canNominate, canVote, openNomination, voteSummary, voteThreshold, yesVoters } from './multiplayer/voting';
 
 // Imports des composants
@@ -80,6 +80,8 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
   const [deadAtNightStart, setDeadAtNightStart] = useState(saved?.deadAtNightStart ?? []);
   // Rôles absents de la partie montrés au Démon pour bluffer
   const [demonBluffs, setDemonBluffs] = useState(saved?.demonBluffs ?? []);
+  // Bluffs que le Démon a transmis à ses Sbires : { rôle: [id des Sbires] }
+  const [bluffShares, setBluffShares] = useState(saved?.bluffShares ?? {});
   // Multijoueur : discussion, joueurs connectés au salon
   const [chat, setChat] = useState([]);
   const [roster, setRoster] = useState([]);
@@ -178,10 +180,11 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
       killedTonightId,
       deadAtNightStart,
       demonBluffs,
+      bluffShares,
       debateMinutes,
       day,
     }, mode);
-  }, [mode, players, currentTime, currentNight, nightLog, completedActions, roleAssigned, isStarted, executionToday, lastExecutedPlayerId, killedTonightId, deadAtNightStart, demonBluffs, debateMinutes, day]);
+  }, [mode, players, currentTime, currentNight, nightLog, completedActions, roleAssigned, isStarted, executionToday, lastExecutedPlayerId, killedTonightId, deadAtNightStart, demonBluffs, bluffShares, debateMinutes, day]);
 
 
   // ===== HANDLERS =====
@@ -402,7 +405,9 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     const assigned = assignRoles(players);
     setPlayers(assigned);
     setRoleAssigned(true);
-    setDemonBluffs(pickDemonBluffs(assigned, shuffleArray));
+    const bluffs = pickDemonBluffs(assigned, shuffleArray);
+    setDemonBluffs(bluffs);
+    setBluffShares({});
 
     const count = (category) => assigned.filter(p => getRoleCategory(p.role) === category).length;
     addNightEvent(
@@ -410,6 +415,9 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
       null,
       1
     );
+    if (bluffs.length > 0) {
+      addNightEvent(`👺 Bluffs du Démon (rôles absents de la partie) : ${bluffs.map(getRoleName).join(', ')}`, null, 1);
+    }
   };
 
   const restartGame = () => {
@@ -418,6 +426,7 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     setPlayers(players.map(p => ({ ...p, ...defaultPlayerState })));
     setRoleAssigned(false);
     setDemonBluffs([]);
+    setBluffShares({});
     setForcedEnd(null);
     setDismissedFor(null);
     setSelectedPlayerId(null);
@@ -571,7 +580,18 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     } else if (msg.t === 'act') {
       // Nomination ou vote d'un joueur depuis son écran
       const actor = playersRef.current.find(p => p.key === msg.key);
-      if (!actor || currentTime !== 'JOUR' || gameEnd) return;
+      if (!actor || gameEnd) return;
+      if (msg.kind === 'bluff') {
+        // Le Démon transmet (ou retire) un de ses bluffs à un Sbire
+        const minion = playersRef.current.find(p => p.id === msg.id);
+        if (actor.role !== 'imp' || !actor.alive || !demonBluffs.includes(msg.role) || !minion || !isMinion(minion)) return;
+        setBluffShares(prev => {
+          const others = (prev[msg.role] ?? []).filter(id => id !== minion.id);
+          return { ...prev, [msg.role]: msg.value ? [...others, minion.id] : others };
+        });
+        return;
+      }
+      if (currentTime !== 'JOUR') return;
       if (msg.kind === 'nominate') nominate(actor, msg.id);
       else castVote(actor, msg.value);
     } else if (msg.t === 'targets') {
@@ -597,7 +617,7 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
   const relayPayload = session ? JSON.stringify({
     t: 'state',
     ...buildRelayState({
-      players, currentTime, currentNight, roleAssigned, joinOpen, gameEnd, deadAtNightStart, demonBluffs,
+      players, currentTime, currentNight, roleAssigned, joinOpen, gameEnd, deadAtNightStart, demonBluffs, bluffShares,
       nightLog, activeAction, actorId: activeActor?.id ?? null, selectedTargets, day,
     }),
   }) : null;

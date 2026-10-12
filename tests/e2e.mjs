@@ -186,9 +186,9 @@ const playPhase = async (phase, { skip = [], onSelected = {} } = {}) => {
   for (const step of nightOrder[phase]) {
     const st = await state();
     // Le Gardien ne se réveille que la nuit où il est tué
-    const expectedActive = step.role === null || (step.role === 'ravenkeeper'
+    const expectedActive = !(step.minPlayers && st.players.length < step.minPlayers) && (step.role === null || (step.role === 'ravenkeeper'
       ? st.players.some((p) => p.role === 'ravenkeeper' && p.id === st.killedTonightId)
-      : st.players.some((p) => p.alive && p.role === step.role));
+      : st.players.some((p) => p.alive && p.role === step.role)));
     const el = page.locator('.night-step', { hasText: step.action });
     const active = await el.evaluate((e) => e.style.opacity === '1');
     assert.equal(active, expectedActive, `étape « ${step.action} » active`);
@@ -252,6 +252,14 @@ await test('un jeton déplacé à la main garde sa place', async () => {
     return { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) };
   };
   const near = (a, b) => Math.abs(a.x - b.x) <= 2 && Math.abs(a.y - b.y) <= 2;
+  // La mise en page suit le redimensionnement avec un léger délai
+  const eventually = async (check, message) => {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      if (await check()) return;
+      await page.waitForTimeout(100);
+    }
+    assert.fail(message);
+  };
   const before = await center('Farid');
   await token('Farid').dragTo(page.locator('.grimoire-section'), { targetPosition: { x: 120, y: 150 } });
   await settle();
@@ -260,18 +268,18 @@ await test('un jeton déplacé à la main garde sa place', async () => {
   await token('Alice').click();
   await page.locator('.grimoire-section').click({ position: { x: 5, y: 5 } });
   await settle();
-  assert.ok(near(await center('Farid'), moved), 'position conservée après d\'autres actions');
+  await eventually(async () => near(await center('Farid'), moved), 'position conservée après d\'autres actions');
   // Les positions manuelles valent pour une taille de grimoire donnée
   await page.setViewportSize({ width: 1400, height: 900 });
   await settle();
-  assert.ok(!near(await center('Farid'), moved), 'replacé en cercle quand le grimoire change de taille');
+  await eventually(async () => !near(await center('Farid'), moved), 'replacé en cercle quand le grimoire change de taille');
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.waitForTimeout(600);
-  assert.ok(near(await center('Farid'), moved), 'position retrouvée à la taille d\'origine');
+  await eventually(async () => near(await center('Farid'), moved), 'position retrouvée à la taille d\'origine');
   // Les positions ne sont pas sauvegardées : un rechargement remet les jetons en cercle
   await page.reload();
   await ready('.player-token');
-  assert.ok(near(await center('Farid'), before), 'cercle après rechargement');
+  await eventually(async () => near(await center('Farid'), before), 'cercle après rechargement');
 });
 
 await test('fiche d\'un joueur : notes et statuts', async () => {
@@ -411,12 +419,68 @@ console.log('\nRègles du jeu');
 await newPage();
 
 await test('le Démon ne tue pas la première nuit', async () => {
-  await loadGame(['imp', 'chef', 'empath', 'poisoner', 'mayor'], { currentNight: 1, nightLog: [{ night: 1, events: [] }], isStarted: false });
+  await loadGame(['imp', 'chef', 'empath', 'poisoner', 'mayor', 'saint', 'soldier'], { currentNight: 1, nightLog: [{ night: 1, events: [] }], isStarted: false });
   await playStep(nightOrder.first.find((s) => s.role === 'imp').action);
   assert.equal(await page.getByText('Sélectionnez').count(), 0, 'aucune cible demandée');
   const st = await state();
   assert.ok(st.players.every((p) => p.alive));
   assert.equal(st.completedActions.length, 1);
+});
+
+await test('à moins de 7 joueurs, les Sbires et le Démon ne se réveillent pas la première nuit', async () => {
+  await loadGame(['imp', 'chef', 'empath', 'poisoner', 'mayor', 'saint'], { currentNight: 1, nightLog: [{ night: 1, events: [] }], isStarted: false });
+  for (const step of nightOrder.first.slice(0, 2)) {
+    const el = page.locator('.night-step', { hasText: step.action });
+    assert.equal(await el.evaluate((e) => e.style.opacity), '0.4', `« ${step.action} » inactive`);
+    await el.click();
+  }
+  assert.equal((await state()).completedActions.length, 0);
+  // Le poison, lui, agit normalement
+  assert.equal(await page.locator('.night-step', { hasText: actionOf('first', 'poisoner') }).evaluate((e) => e.style.opacity), '1');
+});
+
+await test('bluffs du Démon : 3 rôles gentils absents de la partie, seulement à partir de 7 joueurs', async () => {
+  // Calcul des vues chargé depuis le serveur de développement
+  const check = await page.evaluate(async () => {
+    const { buildRelayState, pickDemonBluffs } = await import('/src/multiplayer/views.js');
+    const { shuffleArray } = await import('/src/utils/gameLogic.js');
+    const { roles } = await import('/src/data/roles.js');
+    const good = [...roles.townsfolk, ...roles.outsiders].map((r) => r.id);
+    const cast = ['imp', 'poisoner', 'drunk', 'chef', 'empath', 'mayor', 'saint'];
+    const make = (list) => list.map((role, i) => ({ id: i + 1, key: `k${i + 1}`, name: `J${i + 1}`, role, alive: true, shownRole: role === 'drunk' ? 'monk' : null }));
+    const views = (players, demonBluffs) => buildRelayState({
+      players, demonBluffs, bluffShares: {}, currentTime: 'NUIT', currentNight: 1, roleAssigned: true, joinOpen: false,
+      gameEnd: null, deadAtNightStart: [], nightLog: [], activeAction: null, actorId: null, selectedTargets: [], day: null,
+    }).views;
+
+    const seven = make(cast);
+    const six = make(cast.slice(0, 6));
+    const draws = Array.from({ length: 30 }, () => pickDemonBluffs(seven, shuffleArray));
+    const sevenViews = views(seven, draws[0]);
+    const sixViews = views(six, pickDemonBluffs(six, shuffleArray));
+    return {
+      sizes: [...new Set(draws.map((d) => d.length))],
+      allGood: draws.flat().every((id) => good.includes(id)),
+      noneInPlay: draws.flat().every((id) => !cast.includes(id) && id !== 'monk'),
+      distinct: draws.every((d) => new Set(d).size === 3),
+      sixBluffs: pickDemonBluffs(six, shuffleArray),
+      sevenDemonKnows: Object.keys(sevenViews.k1.known).length,
+      sevenMinionKnows: Object.keys(sevenViews.k2.known).length,
+      sevenMinionBluffs: sevenViews.k2.bluffs.length,
+      sixDemonKnows: Object.keys(sixViews.k1.known).length,
+      sixMinionKnows: Object.keys(sixViews.k2.known).length,
+    };
+  });
+  assert.deepEqual(check.sizes, [3]);
+  assert.ok(check.allGood, 'uniquement des Villageois et des Étrangers');
+  assert.ok(check.noneInPlay, 'aucun rôle en jeu, ni celui que croit avoir le Soûlard');
+  assert.ok(check.distinct);
+  assert.deepEqual(check.sixBluffs, [], 'pas de bluffs à 6 joueurs');
+  assert.equal(check.sevenDemonKnows, 2, 'à 7, le Démon connaît son Sbire');
+  assert.equal(check.sevenMinionKnows, 2, 'à 7, le Sbire connaît le Démon');
+  assert.equal(check.sevenMinionBluffs, 0, 'le Sbire ne reçoit pas les bluffs d\'office');
+  assert.equal(check.sixDemonKnows, 1, 'à 6, le Démon ne connaît que lui-même');
+  assert.equal(check.sixMinionKnows, 1, 'à 6, le Sbire ne connaît que lui-même');
 });
 
 await test('le Moine protège sa cible de l\'attaque du Démon', async () => {
@@ -766,6 +830,33 @@ await test('chaque joueur ne voit que son rôle ; le camp du Mal se connaît', a
   const { demonBluffs, players } = await hostState();
   assert.equal(demonBluffs.length, 3);
   assert.ok(demonBluffs.every((id) => !players.some((pl) => pl.role === id)), 'bluffs absents de la partie');
+  assert.match((await hostState()).nightLog[0].events[0].text, /Bluffs du Démon/, 'bluffs rappelés au Conteur dans le journal');
+});
+
+await test('le Démon transmet les bluffs de son choix à son Sbire', async () => {
+  const { Bruno: demon, David: minion } = seats;
+  assert.equal(await demon.locator('.bluff').count(), 3);
+  assert.equal(await demon.locator('.bluff-share').count(), 3, 'un bouton par bluff pour l\'unique Sbire');
+  assert.equal(await minion.locator('.shared-bluffs').count(), 0, 'le Sbire ne reçoit rien d\'office');
+
+  const [first, second] = (await hostState()).demonBluffs;
+  const roleName = (id) => demon.evaluate(async (roleId) => (await import('/src/data/roles.js')).allRoles.find((r) => r.id === roleId).name, id);
+  await demon.locator('.bluff-share').nth(0).click();
+  await demon.locator('.bluff-share').nth(1).click();
+  await until(async () => (await minion.locator('.shared-bluffs').count()) === 1, 'bluffs reçus par le Sbire');
+  await until(async () => (await text(minion, '.shared-bluffs')).includes(await roleName(second)), 'second bluff reçu');
+  assert.ok((await text(minion, '.shared-bluffs')).includes(await roleName(first)));
+  assert.equal(await demon.locator('.bluff-shared').count(), 2);
+
+  // Le Démon peut reprendre un bluff
+  await demon.locator('.bluff-share').nth(1).click();
+  await until(async () => (await demon.locator('.bluff-shared').count()) === 1, 'bluff retiré chez le Démon');
+  await until(async () => !(await text(minion, '.shared-bluffs')).includes(await roleName(second)), 'bluff retiré chez le Sbire');
+  const david = await hostPlayer('David');
+  assert.deepEqual((await hostState()).bluffShares, { [first]: [david.id], [second]: [] });
+  await everyPlayer(async (p, name) => {
+    if (name !== 'David') assert.equal(await p.locator('.shared-bluffs').count(), 0, `${name} ne voit pas les bluffs transmis`);
+  });
 });
 
 await test('le salon se ferme dès que les rôles sont distribués', async () => {
@@ -847,10 +938,10 @@ await test('le jour se lève pour tout le monde : débat chronométré et discus
   await host.getByRole('button', { name: '☀️ Nouvelle Journée' }).click();
   await everyPlayer(async (p, name) => {
     await until(async () => /Jour 1/.test(await text(p, '.phase')), `jour 1 chez ${name}`);
-    await until(async () => /^(2:00|1:5\d)$/.test(await text(p, '.day-panel .countdown')), `compte à rebours de 2 minutes chez ${name}`);
+    await until(async () => /^(2:00|1:[0-5]\d)$/.test(await text(p, '.day-panel .countdown')), `compte à rebours de 2 minutes chez ${name}`);
     assert.equal(await p.getByRole('button', { name: /Nominer/ }).count(), 0, 'pas de nomination pendant le débat');
   });
-  assert.match(await text(host, '.day-vote .countdown'), /^(2:00|1:5\d)$/);
+  assert.match(await text(host, '.day-vote .countdown'), /^(2:00|1:[0-5]\d)$/);
   const first = await text(seats.Alice, '.day-panel .countdown');
   await until(async () => (await text(seats.Alice, '.day-panel .countdown')) !== first, 'le compte à rebours défile');
 
@@ -931,7 +1022,7 @@ await test('une mort de nuit reste secrète jusqu\'au lever du jour', async () =
 });
 
 await test('à la fin du débat, les nominations s\'ouvrent d\'elles-mêmes', async () => {
-  await until(async () => /^(2:00|1:5\d)$/.test(await text(seats.Farid, '.day-panel .countdown')), 'débat du jour 2');
+  await until(async () => /^(2:00|1:[0-5]\d)$/.test(await text(seats.Farid, '.day-panel .countdown')), 'débat du jour 2');
   await host.clock.fastForward(121000);
   // 6 vivants : 3 voix nécessaires
   await everyPlayer((p, name) => until(async () => /Nominations ouvertes · 3 voix nécessaires/.test(await text(p, '.day-panel')), `nominations ouvertes chez ${name}`));

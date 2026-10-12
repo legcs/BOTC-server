@@ -30,6 +30,7 @@ function NightOrderPanel({
   const activeRoles = players.filter(p => p.alive).map(p => p.role);
 
   const isStepActive = (step) => {
+    if (step.minPlayers && players.length < step.minPlayers) return false;
     if (step.role === null) return true;
     // Le Gardien ne se réveille que la nuit où il est tué
     if (step.role === 'ravenkeeper') {

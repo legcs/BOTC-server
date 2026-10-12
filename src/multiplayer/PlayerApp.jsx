@@ -486,8 +486,35 @@ export default function PlayerApp({ room }) {
                   </p>
                 )}
                 {view.bluffs.length > 0 && (
-                  <p className="bluffs" style={{ margin: '0.5rem 0 0', color: '#b794f4', fontSize: '0.9rem' }}>
-                    Rôles absents de la partie (pour bluffer) : {view.bluffs.map((id) => roleOf(id)?.name).join(', ')}
+                  <div className="bluffs" style={{ margin: '0.6rem 0 0', color: '#b794f4', fontSize: '0.9rem' }}>
+                    <div>Vos bluffs — rôles absents de la partie, que vous pouvez prétendre avoir ou transmettre à vos Sbires :</div>
+                    {view.bluffs.map((id) => (
+                      <div key={id} className="bluff" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.35rem' }}>
+                        <strong style={{ color: '#e8e0d5' }}>{roleOf(id)?.name}</strong>
+                        {view.minions.map((minionId) => {
+                          const shared = view.bluffShares[id]?.includes(minionId) ?? false;
+                          return (
+                            <button
+                              key={minionId}
+                              className={`bluff-share${shared ? ' bluff-shared' : ''}`}
+                              onClick={() => relay.send({ t: 'act', kind: 'bluff', role: id, id: minionId, value: !shared })}
+                              style={{
+                                background: shared ? 'rgba(157, 78, 221, 0.35)' : 'transparent',
+                                border: '1px solid rgba(157, 78, 221, 0.6)', borderRadius: '6px', padding: '0.15rem 0.5rem',
+                                color: '#b794f4', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.8rem',
+                              }}
+                            >
+                              {shared ? `✓ transmis à ${nameOf(minionId)}` : `→ ${nameOf(minionId)}`}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {view.sharedBluffs.length > 0 && (
+                  <p className="shared-bluffs" style={{ margin: '0.5rem 0 0', color: '#b794f4', fontSize: '0.9rem' }}>
+                    Bluffs transmis par le Démon (rôles absents de la partie) : {view.sharedBluffs.map((id) => roleOf(id)?.name).join(', ')}
                   </p>
                 )}
               </>
