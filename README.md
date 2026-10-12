@@ -84,7 +84,7 @@ Au lancement, le Conteur choisit son mode de jeu. La partie locale correspond à
 
 ### Côté Conteur
 
-Le Conteur garde le grimoire complet et mène la partie comme en local. Le code du salon s'affiche en haut de l'écran ; un clic dessus copie le lien d'invitation. Chaque joueur qui rejoint le salon prend place dans le cercle, et un onglet « Discussion » s'ajoute au journal.
+Le Conteur garde le grimoire complet et mène la partie comme en local. Le code du salon s'affiche en haut de l'écran ; un clic dessus copie le lien d'invitation. Chaque joueur qui rejoint le salon prend place dans le cercle (il n'y a pas d'ajout manuel dans ce mode), et un onglet « Discussion » s'ajoute au journal.
 
 ![Le grimoire du Conteur en multijoueur](Documentation/screenshots/12-multi-conteur.jpg)
 
@@ -121,7 +121,8 @@ Le Démon, lui, connaît son Sbire et reçoit ses trois bluffs :
 
 ### Fonctionnement et limites
 
-- Le salon accepte de nouveaux joueurs tant que la première nuit n'a pas commencé. Un joueur ou le Conteur qui recharge sa page ou perd sa connexion retrouve sa place.
+- Le salon se ferme dès que les rôles sont distribués : plus personne ne peut rejoindre la partie. Un joueur déjà installé, ou le Conteur, qui recharge sa page ou perd sa connexion retrouve sa place.
+- Un joueur retiré du cercle par le Conteur est déconnecté et en est informé sur son écran.
 - La partie tourne dans le navigateur du Conteur, qui calcule ce que chaque joueur a le droit de voir. Le serveur relaie ces vues, sans jamais envoyer le grimoire complet à un joueur.
 - Les salons sont gardés en mémoire : ils disparaissent si le serveur redémarre.
 - Les nominations et les votes se font à la voix ou dans la discussion ; le Conteur enregistre l'exécution.

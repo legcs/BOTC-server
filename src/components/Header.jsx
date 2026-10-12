@@ -101,7 +101,7 @@ function Header({
               style={{ ...buttonStyle, border: '1px solid rgba(74, 222, 128, 0.5)', color: '#4ade80' }}
             >
               {multiplayer.room
-                ? `Salon ${multiplayer.room}${multiplayer.status === 'online' ? '' : ' (reconnexion…)'}`
+                ? `Salon ${multiplayer.room}${{ online: '', closed: ' (ouvert dans un autre onglet)' }[multiplayer.status] ?? ' (reconnexion…)'}`
                 : 'Connexion…'}
             </button>
           )}

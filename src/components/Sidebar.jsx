@@ -82,6 +82,7 @@ function Sidebar({
           roleAssigned={roleAssigned}
           onAssignRoles={onAssignRoles}
           setIsStarted={setIsStarted}
+          multiplayer={!!multiplayer}
         />
       </div>
 

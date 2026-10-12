@@ -465,8 +465,9 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
   };
 
   // ===== MULTIJOUEUR =====
-  // Les joueurs rejoignent le salon tant que la partie n'a pas commencé
-  const joinOpen = currentTime === 'NUIT' && currentNight === 1 && !isStarted && players.length < 15;
+  // Le salon se ferme dès que les rôles sont distribués : plus personne ne peut rejoindre
+  // (un joueur déjà installé peut toujours revenir après une coupure)
+  const joinOpen = !roleAssigned && !isStarted && currentTime === 'NUIT' && currentNight === 1 && players.length < 15;
   const activeActor = activeAction ? findActor(activeAction.role) : null;
 
   const handleRelayMessage = (msg) => {
@@ -605,6 +606,8 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
           handleTokenClickDuringAction={handleTokenClickDuringAction}
           setSelectedPlayerId={setSelectedPlayerId}
           roleAssigned={roleAssigned}
+          multiplayer={!!session}
+          room={session?.room ?? null}
         />
 
         <Sidebar

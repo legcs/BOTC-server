@@ -266,7 +266,7 @@ await test('un jeton déplacé à la main garde sa place', async () => {
   await settle();
   assert.ok(!near(await center('Farid'), moved), 'replacé en cercle quand le grimoire change de taille');
   await page.setViewportSize({ width: 1440, height: 900 });
-  await settle();
+  await page.waitForTimeout(600);
   assert.ok(near(await center('Farid'), moved), 'position retrouvée à la taille d\'origine');
   // Les positions ne sont pas sauvegardées : un rechargement remet les jetons en cercle
   await page.reload();
@@ -693,6 +693,9 @@ await test('le Conteur choisit le mode multijoueur et obtient un code de salon',
   await host.locator('.mode-multi').click();
   await until(async () => /Salon [A-Z]{4}/.test(await text(host, '.btn-room')), 'code de salon');
   roomCode = (await text(host, '.btn-room')).match(/Salon ([A-Z]{4})/)[1];
+  // En multijoueur, pas d'ajout manuel : les joueurs s'installent en rejoignant le salon
+  assert.equal(await host.getByRole('button', { name: '+ Ajouter un joueur' }).count(), 0);
+  assert.match(await text(host, '.invite-hint'), new RegExp(`code ${roomCode}`));
 });
 
 await test('un code de salon inconnu est refusé', async () => {
@@ -751,6 +754,17 @@ await test('chaque joueur ne voit que son rôle ; le camp du Mal se connaît', a
   const { demonBluffs, players } = await hostState();
   assert.equal(demonBluffs.length, 3);
   assert.ok(demonBluffs.every((id) => !players.some((pl) => pl.role === id)), 'bluffs absents de la partie');
+});
+
+await test('le salon se ferme dès que les rôles sont distribués', async () => {
+  const late = await openBrowser(`?room=${roomCode}`);
+  await joinRoom(late, 'Zoé');
+  await until(async () => /déjà commencé/.test(await text(late)), 'message d\'erreur');
+  await late.context().close();
+  await host.waitForTimeout(300);
+  const st = await hostState();
+  assert.equal(st.players.length, 8, 'personne n\'a été ajouté au cercle');
+  assert.equal(st.roleAssigned, true, 'les rôles distribués sont conservés');
 });
 
 await test('la nuit, les joueurs ne peuvent écrire qu\'au Conteur, en privé', async () => {

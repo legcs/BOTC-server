@@ -31,6 +31,8 @@ function GrimoireSection({
     handleTokenClickDuringAction,
     setSelectedPlayerId,
     roleAssigned,
+    room = null,
+    multiplayer = false,
 }) {
     const selectedPlayer = players.find(p => p.id === selectedPlayerId);
     const [cardPosition, setCardPosition] = useState({});
@@ -163,8 +165,29 @@ function GrimoireSection({
                 );
             })}
 
+            {/* En multijoueur, les joueurs s'installent eux-mêmes en rejoignant le salon */}
+            {(multiplayer && !roleAssigned && currentTime === 'NUIT' && currentNight === 1) && (
+                <div
+                    className="invite-hint"
+                    style={{
+                        position: 'absolute',
+                        bottom: '1rem',
+                        left: '1rem',
+                        background: 'rgba(26, 26, 46, 0.9)',
+                        border: '1px solid rgba(74, 222, 128, 0.4)',
+                        borderRadius: '12px',
+                        padding: '0.6rem 1rem',
+                        color: '#4ade80',
+                        fontSize: '0.9rem',
+                        zIndex: 50,
+                    }}
+                >
+                    {room ? `Les joueurs rejoignent la partie avec le code ${room}` : 'Connexion au salon…'}
+                </div>
+            )}
+
             {/* Bouton ajouter joueur */}
-            {(players.length < 15 && currentTime === 'NUIT' && currentNight === 1) && (
+            {(!multiplayer && players.length < 15 && currentTime === 'NUIT' && currentNight === 1) && (
                 <button
                     onClick={() => onShowAddPlayer(true)}
                     style={{

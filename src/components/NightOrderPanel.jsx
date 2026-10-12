@@ -18,6 +18,7 @@ function NightOrderPanel({
   roleAssigned,
   onAssignRoles,
   setIsStarted,
+  multiplayer = false,
 }) {
   const currentOrder = currentTime === 'JOUR'
     ? nightOrder.day
@@ -287,7 +288,9 @@ function NightOrderPanel({
             display: 'flex',
             justifyContent: 'center'
           }}
-        >Veuillez ajouter au moins 5 joueurs et assigner les rôles.</p>
+        >{multiplayer
+          ? 'Attendez qu\'au moins 5 joueurs aient rejoint le salon, puis assignez les rôles.'
+          : 'Veuillez ajouter au moins 5 joueurs et assigner les rôles.'}</p>
       )}
 
         {(players.length >= 5 && !roleAssigned && currentTime === 'NUIT') && (
