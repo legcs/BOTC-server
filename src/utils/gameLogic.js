@@ -42,6 +42,10 @@ export const assignRoles = (players) => {
     ...roles.demons.filter(role => role.id !== 'dead').slice(0, numDemons),
   ]);
 
+  const drunkBelief = rolePool.some(role => role.id === 'drunk')
+    ? pickRandom(roles.townsfolk.filter(role => role.id !== 'unknown' && !rolePool.includes(role)))
+    : null;
+
   const assigned = players.map((player, index) => ({
     ...player,
     role: rolePool[index]?.id || player.role,
@@ -54,6 +58,8 @@ export const assignRoles = (players) => {
     master: false,
     used: false,
     notes: '',
+    // Le Soûlard croit être un Villageois absent de la partie
+    shownRole: rolePool[index]?.id === 'drunk' ? drunkBelief?.id ?? null : null,
   }));
 
   // La Voyante a besoin d'un Leurre : un joueur gentil tiré au hasard (modifiable ensuite)

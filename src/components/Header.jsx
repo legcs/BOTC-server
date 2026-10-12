@@ -1,4 +1,5 @@
 import React from 'react';
+import { joinUrl } from '../multiplayer/session';
 
 function Header({
   currentTime,
@@ -10,7 +11,20 @@ function Header({
   roleAssigned,
   restartGame,
   isStarted,
+  multiplayer = null,
+  onQuit,
 }) {
+  const buttonStyle = {
+    background: 'linear-gradient(135deg, #2d1f3d 0%, #1a1a2e 100%)',
+    border: '1px solid rgba(157, 78, 221, 0.4)',
+    borderRadius: '8px',
+    padding: '0.4rem 0.8rem',
+    color: '#b794f4',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    fontSize: '0.85rem',
+  };
+
   return (
     <header style={{
       background: 'linear-gradient(180deg, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.4) 100%)',
@@ -77,6 +91,26 @@ function Header({
               {currentTime} {currentNight}
             </span>
           </div>
+
+          {/* Salon multijoueur : code à communiquer aux joueurs */}
+          {multiplayer && (
+            <button
+              className='btn btn-room'
+              title="Copier le lien d'invitation"
+              onClick={() => multiplayer.room && navigator.clipboard?.writeText(joinUrl(multiplayer.room))}
+              style={{ ...buttonStyle, border: '1px solid rgba(74, 222, 128, 0.5)', color: '#4ade80' }}
+            >
+              {multiplayer.room
+                ? `Salon ${multiplayer.room}${multiplayer.status === 'online' ? '' : ' (reconnexion…)'}`
+                : 'Connexion…'}
+            </button>
+          )}
+
+          {onQuit && (
+            <button className='btn btn-quit' onClick={onQuit} title="Revenir au choix du mode de jeu" style={buttonStyle}>
+              Menu
+            </button>
+          )}
 
           {/* Bouton Assigner */}
           {roleAssigned && !isStarted && (

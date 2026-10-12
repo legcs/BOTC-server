@@ -2,7 +2,7 @@
 
 Un grimoire numérique en français pour le Conteur de [Blood on the Clocktower](https://bloodontheclocktower.com/), basé sur le scénario *Trouble Brewing*. L'application remplace le grimoire physique : elle suit les joueurs, leurs rôles et leurs états, et guide le Conteur à travers chaque nuit.
 
-Tout tourne dans le navigateur, sans serveur ni compte.
+Deux façons de jouer, au choix du Conteur au lancement : en **local**, sur un seul écran, ou en **multijoueur**, chaque joueur suivant la partie depuis son propre navigateur. Aucun compte n'est nécessaire.
 
 ![Le grimoire pendant la deuxième nuit](Documentation/screenshots/06-nuit-2.jpg)
 
@@ -76,6 +76,57 @@ Le bouton « ? » ouvre un guide du Conteur : règles, description des rôles, o
   <img src="Documentation/screenshots/10-mobile.jpg" alt="Affichage sur téléphone" width="21%">
 </p>
 
+## Jouer à plusieurs
+
+Au lancement, le Conteur choisit son mode de jeu. La partie locale correspond à tout ce qui précède. La partie multijoueur ouvre un salon que les joueurs rejoignent depuis leur téléphone ou leur ordinateur.
+
+![Choix du mode de jeu](Documentation/screenshots/11-choix-mode.jpg)
+
+### Côté Conteur
+
+Le Conteur garde le grimoire complet et mène la partie comme en local. Le code du salon s'affiche en haut de l'écran ; un clic dessus copie le lien d'invitation. Chaque joueur qui rejoint le salon prend place dans le cercle, et un onglet « Discussion » s'ajoute au journal.
+
+![Le grimoire du Conteur en multijoueur](Documentation/screenshots/12-multi-conteur.jpg)
+
+### Côté joueur
+
+Chaque joueur ouvre le lien d'invitation (ou saisit le code du salon), entre son nom, et voit uniquement ce que son personnage sait :
+
+| Qui | Ce qu'il voit |
+| --- | --- |
+| Tous les joueurs | Le cercle, la phase en cours, qui est mort, son propre rôle et sa description |
+| Sbires et Démon | Les rôles de leurs complices |
+| Démon | Trois rôles absents de la partie, pour bluffer |
+| Espion | Tout le grimoire : rôles et statuts de chacun |
+| Soûlard | Un rôle de Villageois : il ignore qu'il est Soûlard |
+| Rôles à information | Le résultat de leur capacité, dans « Vos informations », sans indication d'empoisonnement |
+
+Les droits suivent les règles du jeu :
+
+- **Capacités** : quand le Conteur réveille un rôle qui doit désigner des joueurs, la demande apparaît sur l'écran du joueur concerné. Il touche ses cibles et valide ; le Conteur confirme et l'application résout la capacité.
+- **Morts de la nuit** : elles restent secrètes jusqu'au lever du jour. Les exécutions sont visibles immédiatement.
+- **Discussion** : ouverte à tous le jour. La nuit, un joueur ne peut écrire qu'au Conteur, en privé ; le Conteur peut répondre en privé à n'importe quel joueur.
+- **Fin de partie** : le vainqueur et tous les rôles sont révélés à tout le monde.
+
+Ici, la Voyante choisit les deux joueurs qu'elle veut sonder :
+
+![Vue d'un joueur : la Voyante choisit ses cibles](Documentation/screenshots/13-multi-joueur.jpg)
+
+Le Démon, lui, connaît son Sbire et reçoit ses trois bluffs :
+
+<p>
+  <img src="Documentation/screenshots/14-multi-demon.jpg" alt="Vue du Démon" width="72%">
+  <img src="Documentation/screenshots/15-multi-mobile.jpg" alt="Vue joueur sur téléphone" width="21%">
+</p>
+
+### Fonctionnement et limites
+
+- Le salon accepte de nouveaux joueurs tant que la première nuit n'a pas commencé. Un joueur ou le Conteur qui recharge sa page ou perd sa connexion retrouve sa place.
+- La partie tourne dans le navigateur du Conteur, qui calcule ce que chaque joueur a le droit de voir. Le serveur relaie ces vues, sans jamais envoyer le grimoire complet à un joueur.
+- Les salons sont gardés en mémoire : ils disparaissent si le serveur redémarre.
+- Les nominations et les votes se font à la voix ou dans la discussion ; le Conteur enregistre l'exécution.
+- Le Soûlard n'est pas réveillé la nuit à la place du rôle qu'il croit avoir : le Conteur lui envoie sa fausse information par message privé.
+
 ## Fonctionnalités
 
 - **Cercle des joueurs** : ajout des joueurs, jetons disposés en cercle et déplaçables à la souris ou au doigt.
@@ -88,6 +139,7 @@ Le bouton « ? » ouvre un guide du Conteur : règles, description des rôles, o
 - **Aide intégrée** : rappel des règles, des rôles et de l'ordre de nuit.
 - **Sauvegarde automatique** : la partie est conservée dans le navigateur (`localStorage`) et survit à un rechargement de la page.
 - **Mode plein écran** et alternance visuelle jour / nuit.
+- **Multijoueur** : salon à rejoindre par code ou par lien, vue de chaque joueur selon son rôle, choix des cibles sur son propre écran, discussion publique et privée.
 
 ## Démarrage
 
@@ -100,7 +152,16 @@ npm install
 npm run dev
 ```
 
-L'application est alors disponible sur `http://localhost:5173`. Le serveur de développement écoute aussi sur le réseau local (`vite --host`), ce qui permet de l'ouvrir depuis une tablette ou un téléphone connecté au même réseau.
+L'application est alors disponible sur `http://localhost:5173`. Le serveur écoute aussi sur le réseau local : en multijoueur, les joueurs connectés au même réseau rejoignent la partie avec l'adresse « Network » affichée au démarrage.
+
+Pour un usage hors développement, construisez l'application puis lancez le serveur, qui sert à la fois les pages et le relais multijoueur :
+
+```bash
+npm run build
+npm start          # http://localhost:3000, ou PORT=8080 npm start
+```
+
+Le multijoueur a besoin de ce serveur Node (connexions WebSocket) : un hébergement purement statique ne suffit que pour la partie locale.
 
 ## Scripts
 
@@ -109,6 +170,7 @@ L'application est alors disponible sur `http://localhost:5173`. Le serveur de d�
 | `npm run dev` | Lance le serveur de développement avec rechargement à chaud |
 | `npm run build` | Génère la version de production dans `dist/` |
 | `npm run preview` | Sert localement la version de production |
+| `npm start` | Lance le serveur de production (application et relais multijoueur) |
 | `npm run lint` | Analyse le code avec ESLint |
 | `npm run test:e2e` | Lance les tests de bout en bout et régénère les captures |
 
@@ -126,6 +188,7 @@ Le script `tests/e2e.mjs` démarre son propre serveur Vite, puis :
 - joue une partie complète à 8 joueurs, de l'ajout des joueurs à la victoire, en vérifiant l'état du grimoire à chaque étape ;
 - vérifie les règles une par une à partir de parties préparées : Moine, Soldat, Voyante et Leurre, Empathe, Gardien, Croque-mort, Mercenaire, Majordome, Confidente, Saint, Maire, poison et conditions de victoire ;
 - contrôle la répartition des rôles de 5 à 15 joueurs, la sauvegarde après rechargement et l'affichage sur téléphone ;
+- joue une partie multijoueur avec 9 navigateurs (un Conteur et 8 joueurs) : synchronisation, vue de chaque rôle, choix des cibles, discussion publique et privée, secret des morts de nuit, reconnexion ;
 - régénère les captures d'écran de ce README dans `Documentation/screenshots/`.
 
 Le tirage des rôles utilise une graine fixe, donc la partie jouée et les captures sont reproductibles. `SEED=41 npm run test:e2e` joue une autre distribution.
@@ -134,13 +197,16 @@ Le tirage des rôles utilise une graine fixe, donc la partie jouée et les captu
 
 ```
 src/
-├── App.jsx              État de la partie et orchestration
+├── Root.jsx             Choix du mode de jeu
+├── App.jsx              Grimoire du Conteur : état de la partie et orchestration
 ├── components/          Interface (en-tête, grimoire, jetons, panneaux, modales)
 │   └── roles/           Logique de la capacité de chaque rôle
+├── multiplayer/         Vue des joueurs, connexion au relais, calcul des vues par rôle
 ├── data/                Rôles, ordre de nuit, conditions de victoire
 ├── utils/               Règles du jeu, placement des jetons, sauvegarde
 └── styles/              Styles globaux
 public/images/           Icônes des rôles et fonds jour / nuit
+server/                  Relais multijoueur (WebSocket) et serveur de production
 tests/e2e.mjs            Tests de bout en bout (Playwright)
 Documentation/           Notes sur la refactorisation et captures d'écran
 ```
@@ -150,6 +216,7 @@ Documentation/           Notes sur la refactorisation et captures d'écran
 - [React 19](https://react.dev/)
 - [Vite 7](https://vite.dev/)
 - [lucide-react](https://lucide.dev/) pour les icônes d'interface
+- [ws](https://github.com/websockets/ws) pour le relais multijoueur
 - [Playwright](https://playwright.dev/) pour les tests
 
 ## Avertissement

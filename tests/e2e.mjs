@@ -67,6 +67,8 @@ const newPage = async (viewport = { width: 1440, height: 900 }, seed = SEED) => 
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   await page.goto(URL);
+  // Écran de choix du mode : ces tests se jouent en partie locale
+  await page.locator('.mode-local').click();
   await ready('header');
 };
 
@@ -77,10 +79,10 @@ const ready = async (selector) => {
   if (fallbackCss) await page.addStyleTag({ content: fallbackCss });
   await settle();
 };
-const shot = async (name) => {
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(2300); // fondu jour/nuit (2 s)
-  await page.screenshot({ path: join(SHOTS, `${name}.jpg`), quality: 85 });
+const shot = async (name, target = page) => {
+  await target.evaluate(() => document.fonts.ready);
+  await target.waitForTimeout(2300); // fondu jour/nuit (2 s)
+  await target.screenshot({ path: join(SHOTS, `${name}.jpg`), quality: 85 });
 };
 const token = (name) => page.locator('.player-token', { hasText: name });
 const journal = () => page.locator('aside').innerText();
@@ -609,6 +611,337 @@ await test('affichage sur téléphone', async () => {
   await shot('10-mobile');
   await page.context().close();
 });
+
+// ===== PARTIE MULTIJOUEUR : UN CONTEUR ET 8 JOUEURS, CHACUN DANS SON NAVIGATEUR =====
+console.log('\nMultijoueur (9 navigateurs)');
+errors = [];
+const MULTI_KEY = 'botc-grimoire-multi-v1';
+const seats = {}; // page de chaque joueur, par nom
+let host;
+let roomCode;
+
+const openBrowser = async (path = '', viewport = { width: 1440, height: 900 }) => {
+  const context = await browser.newContext({ viewport, deviceScaleFactor: 1 });
+  // Même graine que la partie locale : la distribution des rôles est connue d'avance
+  await context.addInitScript((s) => {
+    let a = s >>> 0;
+    Math.random = () => {
+      a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }, 32);
+  const p = await context.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  p.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  await p.goto(URL + path);
+  if (fallbackCss) await p.addStyleTag({ content: fallbackCss });
+  return p;
+};
+
+// Attend qu'une condition devienne vraie : la synchronisation passe par le réseau
+const until = async (check, message) => {
+  const deadline = Date.now() + 5000;
+  for (;;) {
+    if (await check()) return;
+    if (Date.now() > deadline) assert.fail(`synchronisation attendue : ${message}`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
+};
+
+const joinRoom = async (p, name) => {
+  await p.getByPlaceholder('Votre nom...').fill(name);
+  await p.getByRole('button', { name: 'Rejoindre la partie' }).click();
+};
+const hostState = () => host.evaluate((k) => JSON.parse(localStorage.getItem(k)), MULTI_KEY);
+const hostPlayer = async (name) => (await hostState()).players.find((pl) => pl.name === name);
+const seat = (p, name) => p.locator(`.seat[data-name="${name}"]`);
+const knownRoles = (p) => p.$$eval('.seat', (els) => Object.fromEntries(els.filter((e) => e.dataset.role).map((e) => [e.dataset.name, e.dataset.role])));
+const text = (p, selector = 'body') => p.locator(selector).innerText();
+const everyPlayer = async (check) => {
+  for (const [name, p] of Object.entries(seats)) await check(p, name);
+};
+const say = async (p, message) => {
+  await p.getByPlaceholder('Votre message...').fill(message);
+  await p.keyboard.press('Enter');
+};
+const hostStep = (action) => host.locator('.night-step', { hasText: action }).click();
+// Le joueur désigne ses cibles sur son écran, puis le Conteur confirme
+const playerPicks = async (name, targets) => {
+  const p = seats[name];
+  await p.locator('.prompt').waitFor();
+  for (const target of targets) await seat(p, target).click();
+  await p.getByRole('button', { name: '✓ Valider mon choix' }).click();
+  await host.getByText(`${name} a fait son choix`).waitFor();
+};
+const hostConfirm = async () => {
+  await host.getByRole('button', { name: '✓ Confirmer' }).click();
+  await host.waitForTimeout(150);
+};
+
+const EXPECTED_ROLES = {
+  Alice: 'Majordome', Bruno: 'Démon', Chloé: 'Voyante', David: 'Empoisonneur',
+  Emma: 'Chef', Farid: 'Empathe', Gaëlle: 'Gardien', Hugo: 'Mercenaire',
+};
+
+await test('le Conteur choisit le mode multijoueur et obtient un code de salon', async () => {
+  host = await openBrowser();
+  assert.ok(await host.locator('.mode-local').isVisible());
+  assert.ok(await host.locator('.mode-multi').isVisible());
+  await shot('11-choix-mode', host);
+  await host.locator('.mode-multi').click();
+  await until(async () => /Salon [A-Z]{4}/.test(await text(host, '.btn-room')), 'code de salon');
+  roomCode = (await text(host, '.btn-room')).match(/Salon ([A-Z]{4})/)[1];
+});
+
+await test('un code de salon inconnu est refusé', async () => {
+  const stranger = await openBrowser('?room=ZZZZ');
+  await joinRoom(stranger, 'Zoé');
+  await until(async () => /n'existe pas/.test(await text(stranger)), 'message d\'erreur');
+  await stranger.context().close();
+});
+
+await test('8 joueurs rejoignent le salon depuis 8 navigateurs', async () => {
+  for (const [index, name] of NAMES.entries()) {
+    const p = await openBrowser(`?room=${roomCode}`, index === 2 ? { width: 1280, height: 800 } : { width: 1100, height: 760 });
+    await joinRoom(p, name);
+    await p.locator('.phase').waitFor();
+    seats[name] = p;
+    await until(async () => (await host.locator('.player-token').count()) === index + 1, `${name} dans le cercle du Conteur`);
+  }
+  assert.deepEqual((await hostState()).players.map((pl) => pl.name), NAMES);
+  await everyPlayer(async (p, name) => {
+    await until(async () => (await p.locator('.seat').count()) === 8, `${name} voit les 8 joueurs`);
+    assert.deepEqual(await knownRoles(p), {}, 'aucun rôle visible avant la distribution');
+    assert.match(await text(p, '.my-role'), /pas encore distribué/);
+    assert.ok(await seat(p, name).evaluate((e) => e.classList.contains('seat-me')));
+  });
+});
+
+await test('un nom déjà pris est refusé', async () => {
+  const twin = await openBrowser(`?room=${roomCode}`);
+  await joinRoom(twin, 'alice');
+  await until(async () => /déjà pris/.test(await text(twin)), 'message d\'erreur');
+  await twin.context().close();
+  assert.equal(await host.locator('.player-token').count(), 8);
+});
+
+await test('discussion publique : un message arrive chez tous les joueurs et le Conteur', async () => {
+  await say(seats.Alice, 'Bonjour à tous');
+  await everyPlayer((p, name) => until(async () => /Bonjour à tous/.test(await text(p, '.chat-messages')), `message reçu par ${name}`));
+  await until(async () => /Discussion \(1\)/.test(await text(host, 'aside')), 'compteur de messages non lus du Conteur');
+  await host.getByRole('button', { name: /Discussion/ }).click();
+  assert.match(await text(host, '.chat-messages'), /Alice : Bonjour à tous/);
+  assert.match(await text(host, 'aside'), /8 joueurs connectés/);
+});
+
+await test('chaque joueur ne voit que son rôle ; le camp du Mal se connaît', async () => {
+  await host.getByRole('button', { name: 'Assigner les rôles' }).click();
+  await everyPlayer(async (p, name) => {
+    await until(async () => (await p.locator('.role-name').count()) === 1 && (await text(p, '.role-name')) === EXPECTED_ROLES[name], `rôle de ${name}`);
+    const known = Object.keys(await knownRoles(p)).sort();
+    const evil = ['Bruno', 'David'].includes(name);
+    assert.deepEqual(known, evil ? ['Bruno', 'David'] : [name], `rôles connus de ${name}`);
+    assert.match(await text(p, '.role-team'), evil ? /camp du Mal/ : /camp du Village/);
+    assert.equal(await p.locator('.bluffs').count(), name === 'Bruno' ? 1 : 0, 'seul le Démon reçoit des bluffs');
+    assert.equal(await p.locator('.grimoire-note').count(), 0);
+  });
+  assert.deepEqual(await knownRoles(seats.David), { Bruno: 'imp', David: 'poisoner' });
+  const { demonBluffs, players } = await hostState();
+  assert.equal(demonBluffs.length, 3);
+  assert.ok(demonBluffs.every((id) => !players.some((pl) => pl.role === id)), 'bluffs absents de la partie');
+});
+
+await test('la nuit, les joueurs ne peuvent écrire qu\'au Conteur, en privé', async () => {
+  await hostStep('Les Sbires se réveillent');
+  await until(async () => seats.Chloé.locator('option[value="all"]').isDisabled(), 'discussion publique fermée');
+  await say(seats.Chloé, 'Qui dois-je sonder ?');
+  await until(async () => /Chloé \(privé\) : Qui dois-je sonder/.test(await text(host, '.chat-messages')), 'message privé reçu par le Conteur');
+  assert.match(await text(seats.Chloé, '.chat-messages'), /Vous \(privé → Conteur\) : Qui dois-je sonder/);
+
+  await host.getByLabel('Destinataire').selectOption({ label: 'Chloé' });
+  await say(host, 'Deux joueurs de ton choix');
+  await until(async () => /Conteur \(privé\) : Deux joueurs de ton choix/.test(await text(seats.Chloé, '.chat-messages')), 'réponse privée reçue');
+  await host.waitForTimeout(300);
+  await everyPlayer(async (p, name) => {
+    if (name === 'Chloé') return;
+    assert.doesNotMatch(await text(p, '.chat-messages'), /sonder|de ton choix/, `${name} ne voit pas les messages privés`);
+  });
+  await shot('12-multi-conteur', host);
+});
+
+await test('un joueur désigne lui-même sa cible, le Conteur confirme', async () => {
+  await hostStep('L\'Empoisonneur choisit un joueur à empoisonner');
+  await host.getByText('En attente du choix de David').waitFor();
+  await seats.David.locator('.prompt').waitFor();
+  await everyPlayer(async (p, name) => {
+    if (name !== 'David') assert.equal(await p.locator('.prompt').count(), 0, `${name} n'est pas sollicité`);
+  });
+  assert.ok(await host.getByRole('button', { name: '✓ Confirmer' }).isDisabled());
+  await playerPicks('David', ['Chloé']);
+  await hostConfirm();
+  assert.equal((await hostPlayer('Chloé')).poisoned, true);
+  await until(async () => (await seats.David.locator('.prompt').count()) === 0, 'demande refermée chez David');
+});
+
+await test('les informations de nuit n\'arrivent qu\'au joueur concerné, sans révéler le poison', async () => {
+  await hostStep('Le Chef apprend le nombre de paires');
+  await until(async () => (await seats.Emma.locator('.my-infos').count()) === 1, 'information du Chef');
+  assert.match(await text(seats.Emma, '.my-infos'), /Le Chef détecte \d paire/);
+
+  await hostStep('La Voyante choisit 2 joueurs');
+  const chloe = seats.Chloé;
+  await chloe.locator('.prompt').waitFor();
+  await seat(chloe, 'Bruno').click();
+  await seat(chloe, 'Alice').click();
+  await shot('13-multi-joueur', chloe);
+  await chloe.getByRole('button', { name: '✓ Valider mon choix' }).click();
+  await host.getByText('Chloé a fait son choix').waitFor();
+  await hostConfirm();
+
+  await until(async () => (await chloe.locator('.my-infos').count()) === 1, 'information de la Voyante');
+  assert.match(await text(chloe, '.my-infos'), /Voyante vérifie Bruno et Alice: Il (y a un|n'y a pas de) démon/);
+  // Le Conteur sait que l'information est fausse, pas la Voyante empoisonnée
+  assert.match((await hostState()).nightLog[0].events[0].text, /Voyante \(empoisonnée\/ivre\)/);
+  assert.doesNotMatch(await text(chloe), /empoisonn|ivre|FAUX/i);
+  await everyPlayer(async (p, name) => {
+    if (!['Emma', 'Chloé'].includes(name)) assert.equal(await p.locator('.my-infos').count(), 0, `${name} n'a reçu aucune information`);
+  });
+});
+
+await test('le jour se lève pour tout le monde ; l\'exécution est visible de tous', async () => {
+  await host.getByRole('button', { name: '☀️ Nouvelle Journée' }).click();
+  await everyPlayer((p, name) => until(async () => /Jour 1/.test(await text(p, '.phase')), `jour 1 chez ${name}`));
+  await say(seats.Hugo, 'Je propose Emma');
+  await until(async () => /Hugo : Je propose Emma/.test(await text(seats.Gaëlle, '.chat-messages')), 'discussion publique rouverte le jour');
+
+  await host.locator('aside').getByRole('button', { name: 'Emma', exact: true }).click();
+  await everyPlayer(async (p, name) => {
+    await until(async () => (await seat(p, 'Emma').getAttribute('data-alive')) === 'false', `mort d'Emma vue par ${name}`);
+    await until(async () => /Nuit 2/.test(await text(p, '.phase')), `nuit 2 chez ${name}`);
+  });
+  assert.match(await text(seats.Emma, '.role-team'), /mort/);
+});
+
+await test('une mort de nuit reste secrète jusqu\'au lever du jour', async () => {
+  await hostStep('Le Démon (Imp) choisit un joueur à tuer');
+  await playerPicks('Bruno', ['Gaëlle']);
+  await shot('14-multi-demon', seats.Bruno);
+  await hostConfirm();
+  assert.equal((await hostPlayer('Gaëlle')).alive, false);
+
+  // Le Gardien, tué cette nuit, désigne un joueur et apprend son rôle
+  await hostStep('Le Gardien (si tué cette nuit)');
+  await playerPicks('Gaëlle', ['Bruno']);
+  await hostConfirm();
+  await until(async () => /Le Gardien apprend que Bruno est Démon/.test(await text(seats.Gaëlle)), 'information du Gardien');
+
+  await everyPlayer(async (p, name) => {
+    assert.equal(await seat(p, 'Gaëlle').getAttribute('data-alive'), 'true', `${name} ne sait pas encore que Gaëlle est morte`);
+  });
+  await host.getByRole('button', { name: '☀️ Nouvelle Journée' }).click();
+  await everyPlayer((p, name) => until(async () => (await seat(p, 'Gaëlle').getAttribute('data-alive')) === 'false', `mort de Gaëlle annoncée à ${name}`));
+});
+
+await test('un joueur ou le Conteur qui recharge sa page retrouve la partie', async () => {
+  await seats.Alice.reload();
+  if (fallbackCss) await seats.Alice.addStyleTag({ content: fallbackCss });
+  await until(async () => (await seats.Alice.locator('.role-name').count()) === 1, 'Alice retrouve sa place');
+  assert.equal(await text(seats.Alice, '.role-name'), 'Majordome');
+  assert.match(await text(seats.Alice, '.phase'), /Jour 2/);
+  assert.match(await text(seats.Alice, '.chat-messages'), /Bonjour à tous/);
+  assert.equal(await host.locator('.player-token').count(), 8, 'pas de doublon dans le cercle');
+
+  const before = await hostState();
+  await host.reload();
+  if (fallbackCss) await host.addStyleTag({ content: fallbackCss });
+  await until(async () => (await text(host, '.btn-room')).includes(`Salon ${roomCode}`), 'le Conteur retrouve son salon');
+  assert.deepEqual((await hostState()).players, before.players);
+  await everyPlayer((p, name) => until(async () => (await p.locator('.connection-warning').count()) === 0, `Conteur de nouveau en ligne pour ${name}`));
+});
+
+await test('le salon est fermé aux nouveaux joueurs une fois la partie lancée', async () => {
+  const late = await openBrowser(`?room=${roomCode}`);
+  await joinRoom(late, 'Zoé');
+  await until(async () => /déjà commencé/.test(await text(late)), 'message d\'erreur');
+  await late.context().close();
+});
+
+await test('fin de partie : tous les joueurs voient le vainqueur et les rôles', async () => {
+  await host.locator('aside').getByRole('button', { name: 'Bruno', exact: true }).click();
+  await host.getByText('Victoire du Village !').waitFor();
+  await everyPlayer(async (p, name) => {
+    await until(async () => (await p.locator('.game-end').count()) === 1, `fin de partie chez ${name}`);
+    assert.match(await text(p, '.game-end'), /Victoire du Village/);
+    await until(async () => Object.keys(await knownRoles(p)).length === 8, `rôles révélés à ${name}`);
+  });
+  await host.getByRole('button', { name: 'Continuer' }).click({ force: true });
+});
+
+await test('l\'Espion voit tout le grimoire ; le Soûlard se croit Villageois', async () => {
+  await host.getByRole('button', { name: 'Recommencer' }).click();
+  await until(async () => /pas encore distribué/.test(await text(seats.Alice, '.my-role')), 'partie remise à zéro chez les joueurs');
+  // Rôles imposés dans la sauvegarde du Conteur, les joueurs restant connectés
+  await host.evaluate((k) => {
+    const game = JSON.parse(localStorage.getItem(k));
+    const cast = ['spy', 'imp', 'fortuneteller', 'chef', 'drunk', 'empath', 'ravenkeeper', 'slayer'];
+    game.players = game.players.map((pl, i) => ({
+      ...pl, role: cast[i], shownRole: cast[i] === 'drunk' ? 'monk' : null, poisoned: pl.name === 'Hugo',
+    }));
+    game.roleAssigned = true;
+    game.isStarted = true;
+    localStorage.setItem(k, JSON.stringify(game));
+  }, MULTI_KEY);
+  await host.reload();
+  if (fallbackCss) await host.addStyleTag({ content: fallbackCss });
+
+  const { Alice: spy, Emma: drunk } = seats;
+  await until(async () => (await spy.locator('.grimoire-note').count()) === 1, 'vue de l\'Espion');
+  assert.deepEqual(await knownRoles(spy), {
+    Alice: 'spy', Bruno: 'imp', Chloé: 'fortuneteller', David: 'chef', Emma: 'drunk', Farid: 'empath', Gaëlle: 'ravenkeeper', Hugo: 'slayer',
+  });
+  assert.match(await seat(spy, 'Hugo').innerText(), /☠️/, 'l\'Espion voit qui est empoisonné');
+
+  await until(async () => (await drunk.locator('.role-name').count()) === 1, 'rôle du Soûlard');
+  assert.equal(await text(drunk, '.role-name'), 'Moine');
+  assert.match(await text(drunk, '.role-team'), /Villageois · camp du Village/);
+  assert.deepEqual(await knownRoles(drunk), { Emma: 'monk' });
+  assert.doesNotMatch(await text(drunk), /Soûlard/);
+  assert.deepEqual(await knownRoles(seats.Bruno), { Alice: 'spy', Bruno: 'imp' }, 'le Démon connaît son Sbire');
+});
+
+await test('le Conteur retire un joueur : il est déconnecté de la partie', async () => {
+  // Un joueur ne se retire qu'avant la distribution des rôles
+  await host.getByRole('button', { name: 'Recommencer' }).click();
+  await host.locator('.player-token', { hasText: 'Hugo' }).click();
+  await host.getByRole('button', { name: /Retirer du cercle/ }).click();
+  await until(async () => /retiré de la partie/.test(await text(seats.Hugo)), 'Hugo prévenu');
+  await until(async () => (await seats.Alice.locator('.seat').count()) === 7, 'cercle à 7 joueurs');
+  delete seats.Hugo;
+});
+
+await test('le menu permet de quitter puis de reprendre le même salon', async () => {
+  await host.getByRole('button', { name: 'Menu' }).click();
+  await host.locator('.mode-multi').waitFor();
+  await until(async () => (await seats.Alice.locator('.connection-warning').count()) === 1, 'joueurs prévenus de l\'absence du Conteur');
+  await host.locator('.mode-multi').click();
+  await until(async () => (await text(host, '.btn-room')).includes(`Salon ${roomCode}`), 'même salon');
+  assert.equal(await host.locator('.player-token').count(), 7);
+  await until(async () => (await seats.Alice.locator('.connection-warning').count()) === 0, 'Conteur de retour');
+});
+
+await test('vue joueur sur téléphone', async () => {
+  const phone = seats.Chloé;
+  await phone.setViewportSize({ width: 390, height: 844 });
+  await phone.waitForTimeout(300);
+  assert.equal(await phone.locator('.seat').count(), 7);
+  const overflow = await phone.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  assert.ok(overflow <= 0, `débordement horizontal de ${overflow}px`);
+  await shot('15-multi-mobile', phone);
+});
+
+for (const p of [host, ...Object.values(seats)]) await p?.context().close();
 
 // ===== BILAN =====
 await browser.close();

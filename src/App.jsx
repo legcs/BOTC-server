@@ -5,9 +5,13 @@ import { nightOrder } from './data/nightOrder';
 
 // Imports des utils
 import { getActionType, getRoleCategory, getRoleName } from './utils/roleUtils';
-import { assignRoles, canUseAbility, getVictory, resolveDemonDeath } from './utils/gameLogic';
+import { assignRoles, canUseAbility, getVictory, resolveDemonDeath, shuffleArray } from './utils/gameLogic';
 import { calculateCirclePositions } from './utils/positionUtils';
 import { loadGame, saveGame } from './utils/storage';
+
+// Imports du mode multijoueur
+import { useRelay } from './multiplayer/useRelay';
+import { buildRelayState, INFO_ROLES, pickDemonBluffs } from './multiplayer/views';
 
 // Imports des composants
 import VictoryModal from './components/VictoryModal';
@@ -34,12 +38,16 @@ const defaultPlayerState = {
   master: false,
   used: false,
   notes: '',
+  shownRole: null,
 };
 
-export default function BotCStoryteller() {
+// `session` est fourni en mode multijoueur : le grimoire est alors publié aux joueurs connectés
+export default function BotCStoryteller({ session = null, onSession, onQuit }) {
+  const mode = session ? 'multi' : 'local';
+
   // ===== ÉTAT =====
   // Partie sauvegardée dans le navigateur (survit à un rechargement de la page)
-  const [saved] = useState(loadGame);
+  const [saved] = useState(() => loadGame(mode));
   const [players, setPlayersState] = useState(saved?.players ?? []);
   const playersRef = useRef(players);
   const [currentTime, setCurrentTime] = useState(saved?.currentTime ?? 'NUIT');
@@ -65,6 +73,14 @@ export default function BotCStoryteller() {
   const [touchOffset, setTouchOffset] = useState({ x: 0, y: 0 });
   const [roleAssigned, setRoleAssigned] = useState(saved?.roleAssigned ?? false);
   const [isStarted, setIsStarted] = useState(saved?.isStarted ?? false);
+  // Joueurs déjà morts au début de la nuit : les morts de la nuit restent secrètes jusqu'au jour
+  const [deadAtNightStart, setDeadAtNightStart] = useState(saved?.deadAtNightStart ?? []);
+  // Rôles absents de la partie montrés au Démon pour bluffer
+  const [demonBluffs, setDemonBluffs] = useState(saved?.demonBluffs ?? []);
+  // Multijoueur : discussion, joueurs connectés au salon
+  const [chat, setChat] = useState([]);
+  const [roster, setRoster] = useState([]);
+  const [hostedTick, setHostedTick] = useState(0);
 
   const containerRef = useRef(null);
 
@@ -152,8 +168,10 @@ export default function BotCStoryteller() {
       executionToday,
       lastExecutedPlayerId,
       killedTonightId,
-    });
-  }, [players, currentTime, currentNight, nightLog, completedActions, roleAssigned, isStarted, executionToday, lastExecutedPlayerId, killedTonightId]);
+      deadAtNightStart,
+      demonBluffs,
+    }, mode);
+  }, [mode, players, currentTime, currentNight, nightLog, completedActions, roleAssigned, isStarted, executionToday, lastExecutedPlayerId, killedTonightId, deadAtNightStart, demonBluffs]);
 
 
   // ===== HANDLERS =====
@@ -190,6 +208,8 @@ export default function BotCStoryteller() {
   };
 
   const removePlayer = (playerId) => {
+    const removed = players.find(p => p.id === playerId);
+    if (removed?.key) relay.send({ t: 'kick', key: removed.key });
     setPlayers(players.filter(p => p.id !== playerId));
     setSelectedPlayerId(null);
   };
@@ -241,12 +261,14 @@ export default function BotCStoryteller() {
     startNewNight();
   };
 
-  const addNightEvent = (text, actionKey = null, night = currentNight) => {
+  // `to` : joueur à qui l'information est destinée (visible sur son écran en multijoueur)
+  const addNightEvent = (text, actionKey = null, night = currentNight, to = null) => {
     const time = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
     const event = {
       time,
       text: text.replace('[FAUX]', ''), // Retirer le marqueur du texte
       isFalse: text.includes('[FAUX]'),
+      ...(to !== null ? { to } : {}),
     };
 
     setNightLog(log => (log.some(n => n.night === night)
@@ -274,6 +296,7 @@ export default function BotCStoryteller() {
 
     setCompletedActions([]);
     setKilledTonightId(null);
+    setDeadAtNightStart(basePlayers.filter(p => !p.alive).map(p => p.id));
   };
 
   const startNewDay = () => {
@@ -294,6 +317,7 @@ export default function BotCStoryteller() {
     setExecutionToday(false);
     setLastExecutedPlayerId(null);
     setKilledTonightId(null);
+    setDeadAtNightStart([]);
   };
 
   const assignRolesToPlayers = () => {
@@ -303,6 +327,7 @@ export default function BotCStoryteller() {
     const assigned = assignRoles(players);
     setPlayers(assigned);
     setRoleAssigned(true);
+    setDemonBluffs(pickDemonBluffs(assigned, shuffleArray));
 
     const count = (category) => assigned.filter(p => getRoleCategory(p.role) === category).length;
     addNightEvent(
@@ -317,6 +342,7 @@ export default function BotCStoryteller() {
     setIsStarted(false);
     setPlayers(players.map(p => ({ ...p, ...defaultPlayerState })));
     setRoleAssigned(false);
+    setDemonBluffs([]);
     setForcedEnd(null);
     setDismissedFor(null);
     setSelectedPlayerId(null);
@@ -377,12 +403,14 @@ export default function BotCStoryteller() {
       return;
     }
 
+    const actor = findActor(role);
     handler({
       targets,
       players,
-      actor: findActor(role),
+      actor,
       lastExecutedPlayerId,
-      addNightEvent,
+      // Le résultat d'un rôle à information est destiné au joueur qui l'a
+      addNightEvent: (text, key) => addNightEvent(text, key, currentNight, INFO_ROLES.includes(role) ? actor?.id ?? null : null),
       actionKey,
       setPlayers,
       onNightDeath: setKilledTonightId,
@@ -436,6 +464,74 @@ export default function BotCStoryteller() {
     e.dataTransfer.dropEffect = 'move';
   };
 
+  // ===== MULTIJOUEUR =====
+  // Les joueurs rejoignent le salon tant que la partie n'a pas commencé
+  const joinOpen = currentTime === 'NUIT' && currentNight === 1 && !isStarted && players.length < 15;
+  const activeActor = activeAction ? findActor(activeAction.role) : null;
+
+  const handleRelayMessage = (msg) => {
+    if (msg.t === 'hosted') {
+      onSession?.({ room: msg.room, token: msg.token });
+      setHostedTick(tick => tick + 1);
+    } else if (msg.t === 'history') {
+      setChat(msg.messages);
+    } else if (msg.t === 'chat') {
+      setChat(prev => [...prev, msg.message]);
+    } else if (msg.t === 'roster') {
+      setRoster(msg.players);
+      // Chaque nouveau connecté prend place dans le cercle
+      const seated = new Set(playersRef.current.map(p => p.key).filter(Boolean));
+      const newcomers = msg.players.filter(p => !seated.has(p.key));
+      if (newcomers.length === 0) return;
+      if (!joinOpen) {
+        newcomers.forEach(p => relay.send({ t: 'kick', key: p.key }));
+        return;
+      }
+      setPlayers(prev => {
+        let nextId = Math.max(0, ...prev.map(p => p.id));
+        return [...prev, ...newcomers.map(p => ({ ...defaultPlayerState, id: ++nextId, name: p.name, key: p.key }))];
+      });
+      setRoleAssigned(false);
+    } else if (msg.t === 'targets') {
+      // Un joueur a désigné les cibles de sa capacité : le Conteur n'a plus qu'à confirmer
+      if (!activeAction || !activeActor || activeActor.key !== msg.key) return;
+      const count = activeAction.type.includes('two') ? 2 : 1;
+      const ids = [...new Set(msg.ids)]
+        .filter(id => players.some(p => p.id === id))
+        .filter(id => !(activeAction.type === 'select_one_not_self' && id === activeActor.id))
+        .slice(0, count);
+      setSelectedTargets(ids);
+    }
+  };
+
+  const relay = useRelay({
+    enabled: !!session,
+    hello: () => ({ t: 'host', room: session?.room, token: session?.token }),
+    onMessage: handleRelayMessage,
+  });
+  const sendRelay = relay.send;
+
+  // Publie la partie : l'état public et ce que chaque joueur a le droit de voir
+  const relayPayload = session ? JSON.stringify({
+    t: 'state',
+    ...buildRelayState({
+      players, currentTime, currentNight, roleAssigned, joinOpen, gameEnd, deadAtNightStart, demonBluffs,
+      nightLog, activeAction, actorId: activeActor?.id ?? null, selectedTargets,
+    }),
+  }) : null;
+  useEffect(() => {
+    if (relayPayload) sendRelay(relayPayload);
+  }, [relayPayload, sendRelay, hostedTick]);
+
+  const multiplayer = session ? {
+    room: session.room,
+    status: relay.status,
+    roster,
+    chat,
+    recipients: players.filter(p => p.key).map(p => ({ id: p.key, label: p.name })),
+    onSendChat: (to, text) => relay.send({ t: 'chat', to, text }),
+  } : null;
+
   // ===== RENDER =====
   return (
     <div style={{
@@ -471,6 +567,8 @@ export default function BotCStoryteller() {
         roleAssigned={roleAssigned}
         restartGame={restartGame}
         isStarted={isStarted}
+        multiplayer={multiplayer}
+        onQuit={onQuit}
       />
 
       <main className="main-layout" style={{
@@ -526,6 +624,7 @@ export default function BotCStoryteller() {
           roleAssigned={roleAssigned}
           onAssignRoles={assignRolesToPlayers}
           setIsStarted={setIsStarted}
+          multiplayer={multiplayer}
         />
       </main>
 
@@ -533,6 +632,7 @@ export default function BotCStoryteller() {
         <ActionControlPanel
           activeAction={activeAction}
           selectedTargets={selectedTargets}
+          remoteActor={session && activeActor?.key ? activeActor.name : null}
           onConfirm={confirmAction}
           onCancel={cancelAction}
         />

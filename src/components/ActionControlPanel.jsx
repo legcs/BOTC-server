@@ -1,7 +1,7 @@
 import React from 'react';
 import { allRoles } from '../data/roles';
 
-function ActionControlPanel({ activeAction, selectedTargets, onConfirm, onCancel }) {
+function ActionControlPanel({ activeAction, selectedTargets, remoteActor = null, onConfirm, onCancel }) {
   if (!activeAction) return null;
 
   const canConfirm = 
@@ -45,6 +45,12 @@ function ActionControlPanel({ activeAction, selectedTargets, onConfirm, onCancel
           ? `Sélectionnez 2 joueurs (${selectedTargets.length}/2)`
           : 'Sélectionnez un joueur'}
       </div>
+
+      {remoteActor && (
+        <div style={{ fontSize: '0.8rem', color: canConfirm ? '#4ade80' : '#b8a88a', textAlign: 'center' }}>
+          {canConfirm ? `${remoteActor} a fait son choix` : `En attente du choix de ${remoteActor}…`}
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
         <button
