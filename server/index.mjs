@@ -26,7 +26,14 @@ if (!existsSync(join(DIST, 'index.html'))) {
 }
 
 const server = createServer((req, res) => {
-  const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+  let pathname;
+  try {
+    pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+  } catch {
+    // Adresse mal formée (robots, scanners) : la requête est refusée sans faire tomber le serveur
+    res.writeHead(400).end();
+    return;
+  }
   let file = join(DIST, normalize(pathname));
   // Hors de dist/ ou fichier inconnu : on sert l'application
   if (!file.startsWith(DIST) || !existsSync(file) || statSync(file).isDirectory()) {
@@ -36,7 +43,7 @@ const server = createServer((req, res) => {
     'Content-Type': TYPES[extname(file)] ?? 'application/octet-stream',
     'Cache-Control': file.includes(`${join(DIST, 'assets')}`) ? 'public, max-age=31536000, immutable' : 'no-cache',
   });
-  createReadStream(file).pipe(res);
+  createReadStream(file).on('error', () => res.destroy()).pipe(res);
 });
 
 attachRelay(server);
