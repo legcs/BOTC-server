@@ -1,10 +1,12 @@
 import React from 'react';
+import BluffBadges from './BluffBadges';
 import { allRoles } from '../data/roles';
 import { getRoleCategory, getCategoryColor, getRoleName } from '../utils/roleUtils';
 
 function PlayerToken({
   player,
   online = null,
+  bluffs = [],
   totalPlayers,
   onSelect,
   isSelected,
@@ -196,6 +198,8 @@ function PlayerToken({
           }} />
         )}
       </div>
+
+      <BluffBadges bluffs={bluffs} tokenSize={tokenSize} />
 
       {/* Multijoueur : le joueur est-il connecté au salon ? */}
       {online !== null && (

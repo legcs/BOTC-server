@@ -35,6 +35,7 @@ function GrimoireSection({
     room = null,
     roleLocked = false,
     onlineKeys = null,
+    bluffShares = {},
     onDisconnectPlayer = null,
     multiplayer = false,
 }) {
@@ -153,6 +154,7 @@ function GrimoireSection({
                         key={player.id}
                         player={player}
                         online={onlineKeys && player.key ? onlineKeys.includes(player.key) : null}
+                        bluffs={Object.keys(bluffShares).filter(role => bluffShares[role].includes(player.id))}
                         totalPlayers={players.length}
                         onSelect={activeAction ? handleTokenClickDuringAction : (id) => setSelectedPlayerId(id === selectedPlayerId ? null : id)}
                         isSelected={player.id === selectedPlayerId && !activeAction}

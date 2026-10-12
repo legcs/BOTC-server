@@ -4,6 +4,7 @@ import { getCategoryColor, getRoleCategory } from '../utils/roleUtils';
 import { calculateCirclePositions } from '../utils/positionUtils';
 import { globalStyles } from '../styles/globalStyles';
 import ChatPanel from '../components/ChatPanel';
+import BluffBadges from '../components/BluffBadges';
 import { useRelay } from './useRelay';
 import { loadSeat, saveSeat } from './session';
 import { categoryLabel } from './views';
@@ -36,7 +37,7 @@ const titleStyle = {
 };
 
 // Jeton d'un joueur vu par un autre joueur : le rôle n'apparaît que s'il est connu
-function PublicToken({ player, info, isMe, position, size, selectable, selected, onClick }) {
+function PublicToken({ player, info, isMe, position, size, selectable, selected, bluffs, onClick }) {
   const role = info?.role ? roleOf(info.role) : null;
   // Un complice dont on sait seulement qu'il est Sbire
   const team = !role && info?.team === 'minion' ? 'minion' : null;
@@ -99,6 +100,7 @@ function PublicToken({ player, info, isMe, position, size, selectable, selected,
           {info?.master && <span>👑</span>}
           {info?.decoy && <span>❓</span>}
         </div>
+        <BluffBadges bluffs={bluffs} tokenSize={size} />
       </div>
       <div style={{
         marginTop: 2,
@@ -291,6 +293,13 @@ export default function PlayerApp({ room }) {
   };
 
   const nameOf = (id) => players.find((p) => p.id === id)?.name ?? '?';
+  // Bluffs à afficher à côté d'un jeton : ceux que le Démon a transmis à ce Sbire (vue du Démon),
+  // ou ceux que l'on a soi-même reçus (vue du Sbire)
+  const bluffsOf = (id) => {
+    if (!view) return [];
+    if (id === view.id) return view.sharedBluffs;
+    return view.bluffs.filter((role) => view.bluffShares[role]?.includes(id));
+  };
   const voteButton = (color) => ({
     background: `${color}33`, border: `1px solid ${color}`, borderRadius: '8px', padding: '0.5rem 1.4rem',
     color, cursor: 'pointer', fontFamily: 'inherit', fontSize: '1rem',
@@ -474,6 +483,7 @@ export default function PlayerApp({ room }) {
                 size={tokenSize}
                 selectable={!!picking && picking.selectable.includes(p.id)}
                 selected={selection.includes(p.id)}
+                bluffs={bluffsOf(p.id)}
                 onClick={() => togglePick(p.id)}
               />
             ))}

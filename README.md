@@ -107,7 +107,7 @@ Les droits suivent les règles du jeu :
 - **Capacités** : quand le Conteur réveille un rôle qui doit désigner des joueurs, la demande apparaît sur l'écran du joueur concerné. Il touche ses cibles, vivantes ou mortes, et valide ; le Conteur confirme et l'application résout la capacité. Pour la Lavandière, le Libraire et l'Enquêteur, c'est le Conteur qui désigne les deux joueurs : le joueur apprend seulement que l'un des deux a tel rôle.
 - **Morts de la nuit** : elles restent secrètes jusqu'au lever du jour. Les exécutions sont visibles immédiatement.
 - **Discussion** : ouverte à tous le jour, où deux joueurs peuvent aussi se chuchoter en privé, comme un aparté autour de la table. La nuit, un joueur ne peut écrire qu'au Conteur. Le Conteur voit tous les messages, chuchotements compris, et peut écrire en privé à n'importe quel joueur.
-- **Bluffs** : le Démon voit ses trois bluffs et transmet ceux de son choix à chaque Sbire, d'un clic ; il peut les reprendre. Comme dans le jeu, les Sbires ne reçoivent rien d'office. Le Conteur retrouve les trois bluffs dans son journal.
+- **Bluffs** : le Démon voit ses trois bluffs et transmet ceux de son choix à chaque Sbire, d'un clic ; il peut les reprendre. Chaque bluff transmis apparaît en vignette à côté du jeton du Sbire, chez le Démon, chez le Sbire lui-même et sur le grimoire du Conteur. Comme dans le jeu, les Sbires ne reçoivent rien d'office. Le Conteur retrouve les trois bluffs dans son journal.
 - **Fin de partie** : le vainqueur et tous les rôles sont révélés à tout le monde.
 
 ### Débat et vote

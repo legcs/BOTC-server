@@ -1177,11 +1177,21 @@ await test('le Démon transmet les bluffs de son choix à son Sbire', async () =
   await until(async () => (await text(minion, '.shared-bluffs')).includes(await roleName(second)), 'second bluff reçu');
   assert.ok((await text(minion, '.shared-bluffs')).includes(await roleName(first)));
   assert.equal(await demon.locator('.bluff-shared').count(), 2);
+  // Une vignette du rôle apparaît à côté du jeton du Sbire : chez le Démon, chez le Sbire et chez le Conteur
+  const badges = (p, name) => seat(p, name).locator('.bluff-badge').evaluateAll((els) => els.map((e) => e.dataset.role).sort());
+  const expected = [first, second].sort();
+  await until(async () => (await badges(demon, 'David')).length === 2, 'vignettes chez le Démon');
+  assert.deepEqual(await badges(demon, 'David'), expected);
+  assert.deepEqual(await badges(minion, 'David'), expected, 'le Sbire voit ses bluffs à côté de son propre jeton');
+  await until(async () => (await host.locator('.player-token', { hasText: 'David' }).locator('.bluff-badge').count()) === 2, 'vignettes chez le Conteur');
+  assert.equal(await seats.Alice.locator('.bluff-badge').count(), 0, 'les autres joueurs ne voient rien');
 
   // Le Démon peut reprendre un bluff
   await demon.locator('.bluff-share').nth(1).click();
   await until(async () => (await demon.locator('.bluff-shared').count()) === 1, 'bluff retiré chez le Démon');
   await until(async () => !(await text(minion, '.shared-bluffs')).includes(await roleName(second)), 'bluff retiré chez le Sbire');
+  await until(async () => (await badges(demon, 'David')).length === 1, 'vignette retirée');
+  assert.deepEqual(await badges(minion, 'David'), [first]);
   const david = await hostPlayer('David');
   assert.deepEqual((await hostState()).bluffShares, { [first]: [david.id], [second]: [] });
   await everyPlayer(async (p, name) => {

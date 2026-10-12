@@ -907,6 +907,7 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
           roleAssigned={roleAssigned}
           roleLocked={isStarted}
           onlineKeys={session ? roster.filter(p => p.online).map(p => p.key) : null}
+          bluffShares={bluffShares}
           onDisconnectPlayer={session ? disconnectPlayer : null}
           multiplayer={!!session}
           room={session?.room ?? null}
