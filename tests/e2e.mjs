@@ -1199,6 +1199,42 @@ await test('le Démon transmet les bluffs de son choix à son Sbire', async () =
   });
 });
 
+await test('toucher une icône de rôle rappelle sa capacité et son fonctionnement', async () => {
+  const { Bruno: demon, David: minion, Alice: butler } = seats;
+  const closeInfo = async (p) => {
+    await p.locator('.role-info').getByRole('button', { name: 'Fermer' }).click();
+    assert.equal(await p.locator('.role-info').count(), 0);
+  };
+  // Son propre rôle, depuis le panneau « Votre rôle »
+  await butler.locator('.my-role-header').click();
+  assert.equal(await text(butler, '.role-info-name'), 'Majordome');
+  assert.match(await text(butler, '.role-info-ability'), /choisissez un joueur/);
+  assert.match(await text(butler, '.role-info-details'), /Maître/);
+  await closeInfo(butler);
+
+  // Un jeton dont on connaît le rôle : le Sbire touche le jeton du Démon
+  await seat(minion, 'Bruno').click();
+  assert.equal(await text(minion, '.role-info-name'), 'Démon');
+  assert.match(await text(minion, '.role-info'), /Démon · camp du Mal/);
+  await closeInfo(minion);
+
+  // La vignette d'un bluff, à côté du jeton du Sbire
+  const [first] = (await hostState()).demonBluffs;
+  const firstName = await demon.evaluate(async (id) => (await import('/src/data/roles.js')).allRoles.find((r) => r.id === id).name, first);
+  await seat(demon, 'David').locator('.bluff-badge').click();
+  assert.equal(await text(demon, '.role-info-name'), firstName);
+  await closeInfo(demon);
+  // ... et le nom d'un bluff dans la liste du Démon
+  await demon.locator('.bluff-name').first().click();
+  assert.equal(await text(demon, '.role-info-name'), firstName);
+  await demon.locator('.role-info').locator('xpath=..').click({ position: { x: 5, y: 5 } });
+  assert.equal(await demon.locator('.role-info').count(), 0, 'un clic à côté referme le rappel');
+
+  // Un jeton au rôle inconnu n'ouvre rien
+  await seat(butler, 'Chloé').click();
+  assert.equal(await butler.locator('.role-info').count(), 0);
+});
+
 await test('le salon se ferme dès que les rôles sont distribués', async () => {
   const late = await openBrowser(`?room=${roomCode}`);
   await joinRoom(late, 'Zoé');

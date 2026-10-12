@@ -2,7 +2,8 @@ import React from 'react';
 import { allRoles } from '../data/roles';
 
 // Vignettes des bluffs transmis par le Démon à un Sbire, affichées à côté de son jeton
-function BluffBadges({ bluffs, tokenSize }) {
+// `onRoleClick` rend les vignettes cliquables pour rappeler ce que fait le rôle
+function BluffBadges({ bluffs, tokenSize, onRoleClick = null }) {
   if (!bluffs || bluffs.length === 0) return null;
   const size = Math.max(26, tokenSize * 0.4);
 
@@ -11,7 +12,7 @@ function BluffBadges({ bluffs, tokenSize }) {
       className="bluff-badges"
       style={{
         position: 'absolute', top: 0, right: '100%', marginRight: 4, display: 'flex', flexDirection: 'column',
-        gap: 3, pointerEvents: 'none', zIndex: 3,
+        gap: 3, pointerEvents: onRoleClick ? 'auto' : 'none', zIndex: 3,
       }}
     >
       {bluffs.map((id) => {
@@ -22,10 +23,11 @@ function BluffBadges({ bluffs, tokenSize }) {
             className="bluff-badge"
             data-role={id}
             title={`Bluff transmis par le Démon : ${role?.name}`}
+            onClick={onRoleClick ? (e) => { e.stopPropagation(); onRoleClick(id); } : undefined}
             style={{
               width: size, height: size, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: 'radial-gradient(circle at 30% 30%, #3d1f5c, #0d0d1a 75%)', border: '2px dashed #b794f4',
-              boxShadow: '0 0 8px rgba(157, 78, 221, 0.6)',
+              boxShadow: '0 0 8px rgba(157, 78, 221, 0.6)', cursor: onRoleClick ? 'pointer' : 'default',
             }}
           >
             {role?.image

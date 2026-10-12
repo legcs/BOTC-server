@@ -102,6 +102,8 @@ Chaque joueur ouvre le lien d'invitation (ou saisit le code du salon), entre son
 | Soûlard | Un rôle de Villageois : il ignore qu'il est Soûlard, et il est réveillé comme ce Villageois |
 | Rôles à information | Le résultat de leur capacité, dans « Vos informations », sans indication d'empoisonnement |
 
+Toucher une icône de rôle (son propre rôle, le jeton d'un joueur dont on connaît le rôle, la vignette ou le nom d'un bluff) ouvre un rappel du rôle : sa capacité et son fonctionnement détaillé.
+
 Les droits suivent les règles du jeu :
 
 - **Capacités** : quand le Conteur réveille un rôle qui doit désigner des joueurs, la demande apparaît sur l'écran du joueur concerné. Il touche ses cibles, vivantes ou mortes, et valide ; le Conteur confirme et l'application résout la capacité. Pour la Lavandière, le Libraire et l'Enquêteur, c'est le Conteur qui désigne les deux joueurs : le joueur apprend seulement que l'un des deux a tel rôle.

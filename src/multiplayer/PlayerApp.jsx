@@ -5,6 +5,7 @@ import { calculateCirclePositions } from '../utils/positionUtils';
 import { globalStyles } from '../styles/globalStyles';
 import ChatPanel from '../components/ChatPanel';
 import BluffBadges from '../components/BluffBadges';
+import RoleInfoModal from '../components/RoleInfoModal';
 import { useRelay } from './useRelay';
 import { loadSeat, saveSeat } from './session';
 import { categoryLabel } from './views';
@@ -37,7 +38,7 @@ const titleStyle = {
 };
 
 // Jeton d'un joueur vu par un autre joueur : le rôle n'apparaît que s'il est connu
-function PublicToken({ player, info, isMe, position, size, selectable, selected, bluffs, onClick }) {
+function PublicToken({ player, info, isMe, position, size, selectable, selected, bluffs, onClick, onRoleClick }) {
   const role = info?.role ? roleOf(info.role) : null;
   // Un complice dont on sait seulement qu'il est Sbire
   const team = !role && info?.team === 'minion' ? 'minion' : null;
@@ -51,7 +52,8 @@ function PublicToken({ player, info, isMe, position, size, selectable, selected,
       data-alive={player.alive}
       data-role={info?.role ?? ''}
       data-team={team ?? ''}
-      onClick={selectable ? onClick : undefined}
+      // Hors désignation d'une cible, toucher un jeton dont on connaît le rôle rappelle ce qu'il fait
+      onClick={selectable ? onClick : role && onRoleClick ? () => onRoleClick(role.id) : undefined}
       style={{
         position: 'absolute',
         left: position.x - size / 2,
@@ -60,7 +62,7 @@ function PublicToken({ player, info, isMe, position, size, selectable, selected,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        cursor: selectable ? 'pointer' : 'default',
+        cursor: selectable || (role && onRoleClick) ? 'pointer' : 'default',
         zIndex: selected ? 20 : 10,
       }}
     >
@@ -100,7 +102,7 @@ function PublicToken({ player, info, isMe, position, size, selectable, selected,
           {info?.master && <span>👑</span>}
           {info?.decoy && <span>❓</span>}
         </div>
-        <BluffBadges bluffs={bluffs} tokenSize={size} />
+        <BluffBadges bluffs={bluffs} tokenSize={size} onRoleClick={onRoleClick} />
       </div>
       <div style={{
         marginTop: 2,
@@ -172,6 +174,8 @@ export default function PlayerApp({ room }) {
   // Écart entre l'horloge du Conteur et la nôtre, pour afficher le même compte à rebours
   const [clockOffset, setClockOffset] = useState(0);
   const [now, setNow] = useState(() => Date.now());
+  // Rôle dont le joueur consulte le rappel
+  const [roleInfo, setRoleInfo] = useState(null);
   const circleRef = useRef(null);
 
   const relay = useRelay({
@@ -484,6 +488,8 @@ export default function PlayerApp({ room }) {
                 selectable={!!picking && picking.selectable.includes(p.id)}
                 selected={selection.includes(p.id)}
                 bluffs={bluffsOf(p.id)}
+                // Pendant qu'on désigne un joueur, toucher un jeton ne sert qu'à le choisir
+                onRoleClick={picking ? null : setRoleInfo}
                 onClick={() => togglePick(p.id)}
               />
             ))}
@@ -501,7 +507,12 @@ export default function PlayerApp({ room }) {
             )}
             {myRole && (
               <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
+                <div
+                  className="my-role-header"
+                  onClick={() => setRoleInfo(myRole.id)}
+                  title="Rappel du rôle"
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.7rem', cursor: 'pointer' }}
+                >
                   {myRole.image && <img src={myRole.image} alt="" style={{ width: 48, height: 48 }} />}
                   <div>
                     <div className="role-name" style={{ fontSize: '1.3rem', fontWeight: 600, color: roleColors.primary }}>{myRole.name}</div>
@@ -522,7 +533,7 @@ export default function PlayerApp({ room }) {
                     <div>Vos bluffs — rôles absents de la partie, que vous pouvez prétendre avoir ou transmettre à vos Sbires :</div>
                     {view.bluffs.map((id) => (
                       <div key={id} className="bluff" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.35rem' }}>
-                        <strong style={{ color: '#e8e0d5' }}>{roleOf(id)?.name}</strong>
+                        <strong className="bluff-name" onClick={() => setRoleInfo(id)} style={{ color: '#e8e0d5', cursor: 'pointer', textDecoration: 'underline dotted' }}>{roleOf(id)?.name}</strong>
                         {view.minions.map((minionId) => {
                           const shared = view.bluffShares[id]?.includes(minionId) ?? false;
                           return (
@@ -546,7 +557,13 @@ export default function PlayerApp({ room }) {
                 )}
                 {view.sharedBluffs.length > 0 && (
                   <p className="shared-bluffs" style={{ margin: '0.5rem 0 0', color: '#b794f4', fontSize: '0.9rem' }}>
-                    Bluffs transmis par le Démon (rôles absents de la partie) : {view.sharedBluffs.map((id) => roleOf(id)?.name).join(', ')}
+                    Bluffs transmis par le Démon (rôles absents de la partie) :{' '}
+                    {view.sharedBluffs.map((id, index) => (
+                      <React.Fragment key={id}>
+                        {index > 0 && ', '}
+                        <span className="bluff-name" onClick={() => setRoleInfo(id)} style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}>{roleOf(id)?.name}</span>
+                      </React.Fragment>
+                    ))}
                   </p>
                 )}
               </>
@@ -581,6 +598,8 @@ export default function PlayerApp({ room }) {
           </div>
         </aside>
       </main>
+
+      {roleInfo && <RoleInfoModal roleId={roleInfo} onClose={() => setRoleInfo(null)} />}
     </>,
   );
 }
