@@ -12,6 +12,7 @@ import { loadGame, saveGame } from './utils/storage';
 // Imports du mode multijoueur
 import { useRelay } from './multiplayer/useRelay';
 import { buildRelayState, INFO_ROLES, pickDemonBluffs } from './multiplayer/views';
+import { canBeNominated, canNominate, canVote, openNomination, voteSummary, voteThreshold, yesVoters } from './multiplayer/voting';
 
 // Imports des composants
 import VictoryModal from './components/VictoryModal';
@@ -37,6 +38,8 @@ const defaultPlayerState = {
   ivre: false,
   master: false,
   used: false,
+  // Un mort ne vote qu'une seule fois dans le reste de la partie
+  ghostUsed: false,
   notes: '',
   shownRole: null,
 };
@@ -81,6 +84,11 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
   const [chat, setChat] = useState([]);
   const [roster, setRoster] = useState([]);
   const [hostedTick, setHostedTick] = useState(0);
+  // Multijoueur : durée du débat (réglée avant le début) et déroulement de la journée en cours
+  const [debateMinutes, setDebateMinutes] = useState(saved?.debateMinutes ?? 5);
+  const [day, setDayState] = useState(saved?.day ?? null);
+  const dayRef = useRef(day);
+  const [now, setNow] = useState(() => Date.now());
 
   const containerRef = useRef(null);
 
@@ -170,8 +178,10 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
       killedTonightId,
       deadAtNightStart,
       demonBluffs,
+      debateMinutes,
+      day,
     }, mode);
-  }, [mode, players, currentTime, currentNight, nightLog, completedActions, roleAssigned, isStarted, executionToday, lastExecutedPlayerId, killedTonightId, deadAtNightStart, demonBluffs]);
+  }, [mode, players, currentTime, currentNight, nightLog, completedActions, roleAssigned, isStarted, executionToday, lastExecutedPlayerId, killedTonightId, deadAtNightStart, demonBluffs, debateMinutes, day]);
 
 
   // ===== HANDLERS =====
@@ -192,6 +202,61 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
   const endGame = (gameWinner, reason) => {
     setForcedEnd({ winner: gameWinner, reason });
     setDismissedFor(null);
+  };
+
+  // ----- Journée multijoueur : débat, nominations, votes -----
+  const setDay = (update) => {
+    dayRef.current = typeof update === 'function' ? update(dayRef.current) : update;
+    setDayState(dayRef.current);
+  };
+
+  const openNominations = () => {
+    if (dayRef.current?.phase !== 'debate') return;
+    setDay(d => ({ ...d, phase: 'nominations' }));
+    addNightEvent('🗳️ Fin du débat : les nominations sont ouvertes');
+  };
+
+  const nominate = (nominator, nomineeId) => {
+    const nominee = playersRef.current.find(p => p.id === nomineeId);
+    if (!canNominate(nominator, dayRef.current) || !canBeNominated(nominee, dayRef.current)) return;
+    setDay(d => ({
+      ...d,
+      nominations: [...d.nominations, {
+        id: d.nominations.length + 1,
+        nominatorId: nominator.id,
+        nomineeId,
+        votes: {},
+        open: true,
+        threshold: voteThreshold(playersRef.current),
+      }],
+    }));
+    addNightEvent(`🗳️ ${nominator.name} nomine ${nominee.name}`);
+  };
+
+  const closeVote = () => {
+    const open = openNomination(dayRef.current);
+    if (!open) return;
+    const yes = yesVoters(open);
+    const nameOf = (id) => playersRef.current.find(p => p.id === id)?.name;
+    setDay(d => ({ ...d, nominations: d.nominations.map(n => (n.id === open.id ? { ...n, open: false } : n)) }));
+    // Un mort qui vote pour l'exécution dépense son unique vote
+    const ghosts = playersRef.current.filter(p => !p.alive && yes.includes(p.id)).map(p => p.id);
+    if (ghosts.length > 0) {
+      setPlayers(prev => prev.map(p => (ghosts.includes(p.id) ? { ...p, ghostUsed: true } : p)));
+    }
+    addNightEvent(`🗳️ Vote contre ${nameOf(open.nomineeId)} : ${yes.length} voix sur ${open.threshold} nécessaires${yes.length > 0 ? ` (${yes.map(nameOf).join(', ')})` : ''}`);
+  };
+
+  const castVote = (voter, value) => {
+    const open = openNomination(dayRef.current);
+    if (!open || !canVote(voter) || voter.id in open.votes) return;
+    setDay(d => ({
+      ...d,
+      nominations: d.nominations.map(n => (n.id === open.id ? { ...n, votes: { ...n.votes, [voter.id]: value } } : n)),
+    }));
+    // Le vote se clôt de lui-même quand tous les joueurs connectés se sont prononcés
+    const votes = openNomination(dayRef.current).votes;
+    if (playersRef.current.filter(p => p.key && canVote(p)).every(p => p.id in votes)) closeVote();
   };
 
   const addPlayer = () => {
@@ -297,6 +362,7 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     setCompletedActions([]);
     setKilledTonightId(null);
     setDeadAtNightStart(basePlayers.filter(p => !p.alive).map(p => p.id));
+    setDay(null);
   };
 
   const startNewDay = () => {
@@ -306,6 +372,14 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     addNightEvent('☀️ Lever du soleil - Début du jour');
     setCurrentTime('JOUR');
     setCompletedActions([]);
+    if (session) {
+      // Multijoueur : le débat est chronométré, puis les joueurs nominent et votent sur leur écran
+      const start = Date.now();
+      setNow(start);
+      setDay(debateMinutes > 0
+        ? { phase: 'debate', endsAt: start + debateMinutes * 60000, nominations: [] }
+        : { phase: 'nominations', endsAt: null, nominations: [] });
+    }
   };
 
   const resetProgress = () => {
@@ -318,6 +392,7 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     setLastExecutedPlayerId(null);
     setKilledTonightId(null);
     setDeadAtNightStart([]);
+    setDay(null);
   };
 
   const assignRolesToPlayers = () => {
@@ -493,6 +568,12 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
         return [...prev, ...newcomers.map(p => ({ ...defaultPlayerState, id: ++nextId, name: p.name, key: p.key }))];
       });
       setRoleAssigned(false);
+    } else if (msg.t === 'act') {
+      // Nomination ou vote d'un joueur depuis son écran
+      const actor = playersRef.current.find(p => p.key === msg.key);
+      if (!actor || currentTime !== 'JOUR' || gameEnd) return;
+      if (msg.kind === 'nominate') nominate(actor, msg.id);
+      else castVote(actor, msg.value);
     } else if (msg.t === 'targets') {
       // Un joueur a désigné les cibles de sa capacité : le Conteur n'a plus qu'à confirmer
       if (!activeAction || !activeActor || activeActor.key !== msg.key) return;
@@ -517,12 +598,38 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     t: 'state',
     ...buildRelayState({
       players, currentTime, currentNight, roleAssigned, joinOpen, gameEnd, deadAtNightStart, demonBluffs,
-      nightLog, activeAction, actorId: activeActor?.id ?? null, selectedTargets,
+      nightLog, activeAction, actorId: activeActor?.id ?? null, selectedTargets, day,
     }),
   }) : null;
   useEffect(() => {
-    if (relayPayload) sendRelay(relayPayload);
+    // L'heure du Conteur accompagne chaque envoi : les joueurs calent leur compte à rebours dessus
+    if (relayPayload) sendRelay(`${relayPayload.slice(0, -1)},"hostNow":${Date.now()}}`);
   }, [relayPayload, sendRelay, hostedTick]);
+
+  // Compte à rebours du débat ; à son terme, les nominations s'ouvrent d'elles-mêmes
+  const debating = !!session && currentTime === 'JOUR' && day?.phase === 'debate';
+  useEffect(() => {
+    if (!debating) return undefined;
+    const timer = setInterval(() => {
+      const current = dayRef.current;
+      setNow(Date.now());
+      if (current?.phase === 'debate' && Date.now() >= current.endsAt) {
+        dayRef.current = { ...current, phase: 'nominations' };
+        setDayState(dayRef.current);
+      }
+    }, 500);
+    return () => clearInterval(timer);
+  }, [debating]);
+
+  const dayVote = session && day && currentTime === 'JOUR' ? {
+    day,
+    remaining: day.endsAt ? day.endsAt - now : 0,
+    summary: voteSummary(day, players),
+    open: openNomination(day),
+    voters: players.filter(canVote).length,
+    onOpenNominations: openNominations,
+    onCloseVote: closeVote,
+  } : null;
 
   const multiplayer = session ? {
     room: session.room,
@@ -531,6 +638,9 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
     chat,
     recipients: players.filter(p => p.key).map(p => ({ id: p.key, label: p.name })),
     onSendChat: (to, text) => relay.send({ t: 'chat', to, text }),
+    dayVote,
+    // La durée du débat se règle avant le début de la partie
+    debate: !isStarted ? { minutes: debateMinutes, onChange: setDebateMinutes } : null,
   } : null;
 
   // ===== RENDER =====
@@ -606,6 +716,7 @@ export default function BotCStoryteller({ session = null, onSession, onQuit }) {
           handleTokenClickDuringAction={handleTokenClickDuringAction}
           setSelectedPlayerId={setSelectedPlayerId}
           roleAssigned={roleAssigned}
+          roleLocked={isStarted}
           multiplayer={!!session}
           room={session?.room ?? null}
         />

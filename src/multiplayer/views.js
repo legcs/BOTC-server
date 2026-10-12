@@ -1,5 +1,6 @@
 import { roles } from '../data/roles';
 import { getRoleCategory, isEvilRole } from '../utils/roleUtils';
+import { canBeNominated, canNominate, canVote, openNomination, voteSummary } from './voting';
 
 // Rôles dont le résultat de la capacité est une information destinée au joueur
 export const INFO_ROLES = ['washerwoman', 'librarian', 'investigator', 'chef', 'empath', 'fortuneteller', 'undertaker', 'ravenkeeper'];
@@ -28,6 +29,41 @@ const publiclyAlive = (player, game) => {
   return !game.deadAtNightStart.includes(player.id);
 };
 
+// Déroulement de la journée : débat chronométré, puis nominations et votes
+const buildDay = (game) => {
+  const { day } = game;
+  if (!day || game.currentTime !== 'JOUR') return null;
+  const open = openNomination(day);
+  const summary = voteSummary(day, game.players);
+  return {
+    phase: day.phase,
+    endsAt: day.endsAt,
+    threshold: summary.threshold,
+    onBlockId: summary.onBlockId,
+    results: summary.results,
+    // Pendant le vote, on voit qui a voté mais pas quoi : les voix sont révélées à la clôture
+    open: open ? {
+      id: open.id,
+      nominatorId: open.nominatorId,
+      nomineeId: open.nomineeId,
+      voted: Object.keys(open.votes).map(Number),
+      voters: game.players.filter(canVote).length,
+    } : null,
+  };
+};
+
+const buildBallot = (player, game) => {
+  const { day } = game;
+  if (!day || game.currentTime !== 'JOUR' || game.gameEnd) return null;
+  const open = openNomination(day);
+  return {
+    nominees: canNominate(player, day) ? game.players.filter((p) => canBeNominated(p, day)).map((p) => p.id) : [],
+    canVote: !!open && canVote(player) && !(player.id in open.votes),
+    myVote: open && player.id in open.votes ? open.votes[player.id] : null,
+    ghost: player.alive ? null : (player.ghostUsed ? 'used' : 'available'),
+  };
+};
+
 const buildPublic = (game) => ({
   phase: game.currentTime,
   night: game.currentNight,
@@ -36,6 +72,7 @@ const buildPublic = (game) => ({
   // On discute le jour ; la nuit, le village dort
   chatOpen: !game.roleAssigned || game.currentTime === 'JOUR' || !!game.gameEnd,
   gameEnd: game.gameEnd ? { winner: game.gameEnd.winner, reason: game.gameEnd.reason } : null,
+  day: buildDay(game),
   players: game.players.map((p) => ({ id: p.id, name: p.name, alive: publiclyAlive(p, game) })),
 });
 
@@ -90,6 +127,7 @@ const buildView = (player, game) => {
       .filter((event) => event.to === player.id)
       .map((event) => ({ night: night.night, time: event.time, text: sanitize(event.text) }))),
     prompt: buildPrompt(player, game),
+    ballot: buildBallot(player, game),
   };
 };
 

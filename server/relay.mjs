@@ -37,6 +37,8 @@ const sendView = (room, key) => {
     public: room.state?.public ?? null,
     view: room.state?.views?.[key] ?? null,
     hostOnline: !!room.host,
+    // Heure du Conteur à l'instant de l'envoi, pour afficher le même compte à rebours partout
+    hostNow: room.state ? room.state.hostNow + (Date.now() - room.state.receivedAt) : null,
   });
 };
 
@@ -93,7 +95,7 @@ const handlers = {
   state(ws, msg) {
     const { room, role } = ws.session ?? {};
     if (role !== 'host') return;
-    room.state = { public: msg.public, views: msg.views ?? {} };
+    room.state = { public: msg.public, views: msg.views ?? {}, hostNow: Number(msg.hostNow) || Date.now(), receivedAt: Date.now() };
     for (const key of room.players.keys()) sendView(room, key);
   },
 
@@ -141,6 +143,13 @@ const handlers = {
     const { room, role, key } = ws.session ?? {};
     if (role !== 'player' || !Array.isArray(msg.ids)) return;
     send(room.host, { t: 'targets', key, ids: msg.ids.slice(0, 2) });
+  },
+
+  // Nomination ou vote d'un joueur, transmis au Conteur qui tient les comptes
+  act(ws, msg) {
+    const { room, role, key } = ws.session ?? {};
+    if (role !== 'player' || !['nominate', 'vote'].includes(msg.kind)) return;
+    send(room.host, { t: 'act', key, kind: msg.kind, id: msg.id, value: msg.value === true });
   },
 };
 

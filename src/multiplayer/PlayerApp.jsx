@@ -7,6 +7,7 @@ import ChatPanel from '../components/ChatPanel';
 import { useRelay } from './useRelay';
 import { loadSeat, saveSeat } from './session';
 import { categoryLabel } from './views';
+import { formatCountdown } from './voting';
 
 const JOIN_ERRORS = {
   'no-room': 'Ce salon n\'existe pas. Vérifiez le code auprès du Conteur.',
@@ -162,6 +163,9 @@ export default function PlayerApp({ room }) {
   // Choix en cours, rattaché à la demande à laquelle il répond
   const [pick, setPick] = useState({ action: null, ids: [] });
   const [size, setSize] = useState({ width: 600, height: 500 });
+  // Écart entre l'horloge du Conteur et la nôtre, pour afficher le même compte à rebours
+  const [clockOffset, setClockOffset] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
   const circleRef = useRef(null);
 
   const relay = useRelay({
@@ -177,6 +181,7 @@ export default function PlayerApp({ room }) {
         setPub(msg.public);
         setView(msg.view);
         setHostOnline(msg.hostOnline);
+        if (msg.hostNow) setClockOffset(msg.hostNow - Date.now());
       } else if (msg.t === 'history') {
         setChat(msg.messages);
       } else if (msg.t === 'chat') {
@@ -201,6 +206,13 @@ export default function PlayerApp({ room }) {
     observer.observe(circleRef.current);
     return () => observer.disconnect();
   }, [seat, kicked]);
+
+  const debating = pub?.day?.phase === 'debate';
+  useEffect(() => {
+    if (!debating) return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(timer);
+  }, [debating]);
 
   const shell = (children) => (
     <div style={{
@@ -237,9 +249,16 @@ export default function PlayerApp({ room }) {
 
   const players = pub?.players ?? [];
   const prompt = view?.prompt ?? null;
-  const picked = prompt && pick.action === prompt.action ? pick.ids : [];
+  const day = pub?.day ?? null;
+  const ballot = view?.ballot ?? null;
+  const nominees = !prompt && ballot ? ballot.nominees : [];
+  // Ce que le joueur est en train de désigner : les cibles de sa capacité, ou le joueur qu'il nomine
+  const picking = prompt
+    ? { key: prompt.action, count: prompt.count, selectable: prompt.selectable }
+    : nominees.length > 0 ? { key: 'nominate', count: 1, selectable: nominees } : null;
+  const picked = picking && pick.action === picking.key ? pick.ids : [];
   // Un choix déjà transmis au Conteur reste affiché
-  const selection = prompt ? (picked.length > 0 ? picked : prompt.chosen) : [];
+  const selection = prompt ? (picked.length > 0 ? picked : prompt.chosen) : picked;
   const myRole = view?.role ? roleOf(view.role) : null;
   const roleColors = getCategoryColor(myRole ? getRoleCategory(myRole.id) : 'unknown');
   // Hauteur réduite : le nom et le rôle s'affichent sous chaque jeton
@@ -248,19 +267,30 @@ export default function PlayerApp({ room }) {
   const me = players.find((p) => p.id === view?.id);
 
   const togglePick = (id) => {
-    if (!prompt) return;
+    if (!picking) return;
     const current = selection;
     let next;
     if (current.includes(id)) next = current.filter((x) => x !== id);
-    else if (prompt.count === 1) next = [id];
+    else if (picking.count === 1) next = [id];
     else next = current.length < 2 ? [...current, id] : [current[1], id];
-    setPick({ action: prompt.action, ids: next });
+    setPick({ action: picking.key, ids: next });
   };
 
   const submitPick = () => {
     relay.send({ t: 'targets', ids: selection });
     setPick({ action: null, ids: [] });
   };
+
+  const submitNomination = () => {
+    relay.send({ t: 'act', kind: 'nominate', id: picked[0] });
+    setPick({ action: null, ids: [] });
+  };
+
+  const nameOf = (id) => players.find((p) => p.id === id)?.name ?? '?';
+  const voteButton = (color) => ({
+    background: `${color}33`, border: `1px solid ${color}`, borderRadius: '8px', padding: '0.5rem 1.4rem',
+    color, cursor: 'pointer', fontFamily: 'inherit', fontSize: '1rem',
+  });
 
   const phaseLabel = !pub?.rolesAssigned
     ? 'En attente du Conteur'
@@ -328,6 +358,78 @@ export default function PlayerApp({ room }) {
             </div>
           )}
 
+          {day && !pub.gameEnd && (
+            <div className="day-panel" style={{
+              margin: '0.75rem', padding: '0.75rem 1rem', borderRadius: '12px', textAlign: 'center',
+              background: 'rgba(26, 26, 46, 0.98)', border: '2px solid rgba(251, 191, 36, 0.6)',
+              display: 'flex', flexDirection: 'column', gap: '0.45rem', alignItems: 'center',
+            }}>
+              {day.phase === 'debate' && (
+                <div style={{ color: '#fbbf24', fontWeight: 600 }}>
+                  ⏳ Débat en cours · <span className="countdown">{formatCountdown(day.endsAt - (now + clockOffset))}</span>
+                </div>
+              )}
+
+              {day.phase === 'nominations' && !day.open && (
+                <>
+                  <div style={{ color: '#fbbf24', fontWeight: 600 }}>
+                    🗳️ Nominations ouvertes · {day.threshold} voix nécessaires
+                  </div>
+                  {nominees.length > 0 ? (
+                    <>
+                      <div style={{ color: '#b8a88a', fontSize: '0.85rem' }}>Touchez le joueur que vous voulez nominer.</div>
+                      <button
+                        onClick={submitNomination}
+                        disabled={picked.length !== 1}
+                        style={{ ...voteButton('#fbbf24'), opacity: picked.length === 1 ? 1 : 0.5, cursor: picked.length === 1 ? 'pointer' : 'not-allowed' }}
+                      >
+                        {picked.length === 1 ? `Nominer ${nameOf(picked[0])}` : 'Nominer'}
+                      </button>
+                    </>
+                  ) : (
+                    <div style={{ color: '#b8a88a', fontSize: '0.85rem' }}>
+                      {me?.alive ? 'Vous avez déjà nominé aujourd\'hui.' : 'Les morts ne nominent pas.'}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {day.open && (
+                <>
+                  <div style={{ color: '#fbbf24', fontWeight: 600 }}>
+                    {nameOf(day.open.nominatorId)} nomine {nameOf(day.open.nomineeId)} — exécuter {nameOf(day.open.nomineeId)} ?
+                  </div>
+                  {ballot?.canVote && (
+                    <>
+                      <div style={{ display: 'flex', gap: '0.75rem' }}>
+                        <button className="vote-yes" style={voteButton('#4ade80')} onClick={() => relay.send({ t: 'act', kind: 'vote', value: true })}>Oui</button>
+                        <button className="vote-no" style={voteButton('#ff6b6b')} onClick={() => relay.send({ t: 'act', kind: 'vote', value: false })}>Non</button>
+                      </div>
+                      {ballot.ghost === 'available' && (
+                        <div style={{ color: '#b794f4', fontSize: '0.85rem' }}>Vous êtes mort : un « Oui » utilisera votre unique vote.</div>
+                      )}
+                    </>
+                  )}
+                  {ballot && ballot.myVote !== null && (
+                    <div className="my-vote" style={{ color: '#d8d0c5' }}>Vous avez voté {ballot.myVote ? 'Oui' : 'Non'}.</div>
+                  )}
+                  {ballot && !ballot.canVote && ballot.myVote === null && (
+                    <div className="no-vote" style={{ color: '#b8a88a', fontSize: '0.85rem' }}>Vous avez déjà utilisé votre vote de mort.</div>
+                  )}
+                  <div style={{ color: '#b8a88a', fontSize: '0.85rem' }}>{day.open.voted.length}/{day.open.voters} ont voté · {day.threshold} voix nécessaires</div>
+                </>
+              )}
+
+              {day.results.map((result) => (
+                <div key={result.id} className="vote-result" style={{ color: result.nomineeId === day.onBlockId ? '#ff8a8a' : '#b8a88a', fontSize: '0.9rem' }}>
+                  {nameOf(result.nomineeId)} : {result.yes.length} voix
+                  {result.yes.length > 0 && ` (${result.yes.map(nameOf).join(', ')})`}
+                  {result.nomineeId === day.onBlockId && ' — condamné'}
+                </div>
+              ))}
+            </div>
+          )}
+
           <div
             ref={circleRef}
             className="player-circle"
@@ -348,7 +450,7 @@ export default function PlayerApp({ room }) {
                 isMe={p.id === view?.id}
                 position={positions[p.id]}
                 size={tokenSize}
-                selectable={!!prompt && prompt.selectable.includes(p.id)}
+                selectable={!!picking && picking.selectable.includes(p.id)}
                 selected={selection.includes(p.id)}
                 onClick={() => togglePick(p.id)}
               />

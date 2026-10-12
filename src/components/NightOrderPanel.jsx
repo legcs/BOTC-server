@@ -1,6 +1,7 @@
 import React from 'react';
 import { allRoles } from '../data/roles';
 import { getRoleCategory, getCategoryColor, getActionType } from '../utils/roleUtils';
+import DayVotePanel from './DayVotePanel';
 
 function NightOrderPanel({
   currentTime,
@@ -19,6 +20,8 @@ function NightOrderPanel({
   onAssignRoles,
   setIsStarted,
   multiplayer = false,
+  dayVote = null,
+  debate = null,
 }) {
   const currentOrder = currentTime === 'JOUR'
     ? nightOrder.day
@@ -37,6 +40,7 @@ function NightOrderPanel({
 
   const renderDayActions = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', flex: 1, minHeight: 0 }}>
+      {dayVote && <DayVotePanel dayVote={dayVote} players={players} onExecutePlayer={onExecutePlayer} />}
       {/* Actions du jour (défilantes, pour garder l'exécution toujours visible) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', flex: 1, minHeight: 0, overflowY: 'auto' }}>
       {currentOrder.map((step, index) => {
@@ -293,13 +297,36 @@ function NightOrderPanel({
           : 'Veuillez ajouter au moins 5 joueurs et assigner les rôles.'}</p>
       )}
 
+        {debate && (
+          <label
+            className="debate-setting"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem',
+              marginTop: 'auto', marginBottom: '0.5rem', color: '#b8a88a', fontSize: '0.9rem',
+            }}
+          >
+            Durée du débat (minutes)
+            <input
+              type="number"
+              min="0"
+              max="60"
+              value={debate.minutes}
+              onChange={(e) => debate.onChange(Math.max(0, Math.min(60, Number(e.target.value) || 0)))}
+              style={{
+                width: '4.5rem', background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(139, 69, 69, 0.4)',
+                borderRadius: '6px', padding: '0.3rem 0.5rem', color: '#e8e0d5', fontFamily: 'inherit', fontSize: '0.95rem',
+              }}
+            />
+          </label>
+        )}
+
         {(players.length >= 5 && !roleAssigned && currentTime === 'NUIT') && (
           <div style={{
             display: 'flex',
             flexDirection: 'column',
             gap: '0.4rem',
             justifyContent: 'center',
-            marginTop: 'auto', // ← Pousse le bouton vers le bas
+            marginTop: debate ? 0 : 'auto', // ← Pousse le bouton vers le bas
           }}>
           {/* Bouton Assigner */}
           <button
@@ -329,7 +356,7 @@ function NightOrderPanel({
           flexDirection: 'column',
           gap: '0.4rem',
           justifyContent: 'center',
-          marginTop: 'auto', // ← Pousse le bouton vers le bas
+          marginTop: debate ? 0 : 'auto', // ← Pousse le bouton vers le bas
         }}>
           <button
             onClick={onStartNewDay}

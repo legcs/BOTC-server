@@ -35,7 +35,7 @@ Les rôles sont tirés au sort en respectant la répartition officielle (ici 5 V
 
 ### 3. Suivre chaque joueur
 
-Un clic sur un jeton ouvre la fiche du joueur : changement de rôle, statuts (vivant, exécuté, Leurre, Maître, ivre, empoisonné, protégé) et notes du Conteur.
+Un clic sur un jeton ouvre la fiche du joueur : changement de rôle (tant que la partie n'a pas commencé), statuts (vivant, exécuté, Leurre, Maître, ivre, empoisonné, protégé) et notes du Conteur.
 
 ![Fiche d'un joueur](Documentation/screenshots/03-fiche-joueur.jpg)
 
@@ -108,6 +108,19 @@ Les droits suivent les règles du jeu :
 - **Discussion** : ouverte à tous le jour. La nuit, un joueur ne peut écrire qu'au Conteur, en privé ; le Conteur peut répondre en privé à n'importe quel joueur.
 - **Fin de partie** : le vainqueur et tous les rôles sont révélés à tout le monde.
 
+### Débat et vote
+
+Avant de lancer la partie, le Conteur règle la **durée du débat** (en minutes, 0 pour s'en passer) sous la liste des actions de nuit. Chaque journée se déroule ensuite sur les écrans des joueurs :
+
+1. **Débat** : un compte à rebours identique s'affiche chez tout le monde. À son terme, les nominations s'ouvrent d'elles-mêmes ; le Conteur peut aussi les ouvrir plus tôt.
+2. **Nomination** : un joueur vivant touche le joueur qu'il accuse puis « Nominer ». Chacun ne peut nominer qu'une fois par jour, et un joueur ne peut être nominé qu'une fois par jour.
+3. **Vote** : tous les joueurs répondent « Oui » ou « Non » sur leur écran. Les voix restent secrètes jusqu'à la clôture, qui a lieu quand tout le monde a voté ou quand le Conteur clôt le vote.
+4. **Résultat** : il faut au moins la moitié des vivants pour condamner un joueur, et celui qui réunit le plus de voix l'emporte ; en cas d'égalité, personne n'est condamné. Le Conteur exécute le condamné d'un clic, ou passe à la nuit sans exécution.
+
+Un joueur mort ne nomine plus et ne dispose que d'un seul vote pour le reste de la partie : il le dépense en votant « Oui ».
+
+![Vote sur l'écran d'un joueur](Documentation/screenshots/16-multi-vote.jpg)
+
 Ici, la Voyante choisit les deux joueurs qu'elle veut sonder :
 
 ![Vue d'un joueur : la Voyante choisit ses cibles](Documentation/screenshots/13-multi-joueur.jpg)
@@ -125,13 +138,13 @@ Le Démon, lui, connaît son Sbire et reçoit ses trois bluffs :
 - Un joueur retiré du cercle par le Conteur est déconnecté et en est informé sur son écran.
 - La partie tourne dans le navigateur du Conteur, qui calcule ce que chaque joueur a le droit de voir. Le serveur relaie ces vues, sans jamais envoyer le grimoire complet à un joueur.
 - Les salons sont gardés en mémoire : ils disparaissent si le serveur redémarre.
-- Les nominations et les votes se font à la voix ou dans la discussion ; le Conteur enregistre l'exécution.
+- Le vote ne tient pas compte du Majordome (qui ne devrait voter que si son Maître vote) ni de la Vierge : le Conteur applique ces règles à la main. Il garde aussi la possibilité d'exécuter n'importe quel joueur sans vote.
 - Le Soûlard n'est pas réveillé la nuit à la place du rôle qu'il croit avoir : le Conteur lui envoie sa fausse information par message privé.
 
 ## Fonctionnalités
 
 - **Cercle des joueurs** : ajout des joueurs, jetons disposés en cercle et déplaçables à la souris ou au doigt.
-- **Rôles** : distribution automatique des rôles ou attribution manuelle, avec les 22 rôles de *Trouble Brewing* (Villageois, Étrangers, Sbires, Démon).
+- **Rôles** : distribution automatique des rôles ou attribution manuelle avant le début de la partie (les rôles sont ensuite verrouillés), avec les 22 rôles de *Trouble Brewing* (Villageois, Étrangers, Sbires, Démon).
 - **États des joueurs** : mort, exécuté, empoisonné, protégé, ivre, capacité utilisée, notes libres.
 - **Ordre de nuit** : liste des rôles à réveiller pour la première nuit et les suivantes, avec suivi des actions effectuées.
 - **Actions guidées** : sélection des cibles et résolution des capacités (Empoisonneur, Moine, Démon, Voyante, Mercenaire, etc.).
@@ -140,7 +153,7 @@ Le Démon, lui, connaît son Sbire et reçoit ses trois bluffs :
 - **Aide intégrée** : rappel des règles, des rôles et de l'ordre de nuit.
 - **Sauvegarde automatique** : la partie est conservée dans le navigateur (`localStorage`) et survit à un rechargement de la page.
 - **Mode plein écran** et alternance visuelle jour / nuit.
-- **Multijoueur** : salon à rejoindre par code ou par lien, vue de chaque joueur selon son rôle, choix des cibles sur son propre écran, discussion publique et privée.
+- **Multijoueur** : salon à rejoindre par code ou par lien, vue de chaque joueur selon son rôle, choix des cibles sur son propre écran, débat chronométré, nominations et votes sur les écrans, discussion publique et privée.
 
 ## Démarrage
 
@@ -189,7 +202,7 @@ Le script `tests/e2e.mjs` démarre son propre serveur Vite, puis :
 - joue une partie complète à 8 joueurs, de l'ajout des joueurs à la victoire, en vérifiant l'état du grimoire à chaque étape ;
 - vérifie les règles une par une à partir de parties préparées : Moine, Soldat, Voyante et Leurre, Empathe, Gardien, Croque-mort, Mercenaire, Majordome, Confidente, Saint, Maire, poison et conditions de victoire ;
 - contrôle la répartition des rôles de 5 à 15 joueurs, la sauvegarde après rechargement et l'affichage sur téléphone ;
-- joue une partie multijoueur avec 9 navigateurs (un Conteur et 8 joueurs) : synchronisation, vue de chaque rôle, choix des cibles, discussion publique et privée, secret des morts de nuit, reconnexion ;
+- joue une partie multijoueur avec 9 navigateurs (un Conteur et 8 joueurs) : synchronisation, vue de chaque rôle, choix des cibles, débat chronométré, nominations et votes, vote unique des morts, discussion publique et privée, secret des morts de nuit, reconnexion ;
 - régénère les captures d'écran de ce README dans `Documentation/screenshots/`.
 
 Le tirage des rôles utilise une graine fixe, donc la partie jouée et les captures sont reproductibles. `SEED=41 npm run test:e2e` joue une autre distribution.

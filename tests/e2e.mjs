@@ -277,6 +277,7 @@ await test('un jeton déplacé à la main garde sa place', async () => {
 await test('fiche d\'un joueur : notes et statuts', async () => {
   await token('Alice').click();
   const notes = page.getByPlaceholder('Informations, rappels...');
+  assert.ok(await page.locator('.role-selector').isEnabled(), 'rôle modifiable avant le début de la partie');
   await notes.fill('Prétend être la Voyante');
   await page.getByText('🍺 Ivre').click();
   await settle();
@@ -316,6 +317,12 @@ await test('lever du jour', async () => {
   assert.match(await journal(), /Joueur à exécuter/);
   assert.equal(await page.getByRole('button', { name: '+ Ajouter un joueur' }).count(), 0, 'plus d\'ajout de joueur en cours de partie');
   await playPhase('day', { skip: ['slayer', 'virgin', 'mayor'] });
+  // Partie commencée : le Conteur ne peut plus changer le rôle d'un joueur
+  await token('Alice').click();
+  assert.ok(await page.locator('.role-selector').isDisabled(), 'rôle verrouillé en cours de partie');
+  await page.locator('.role-selector').click({ force: true });
+  assert.equal(await page.getByText('Étrangers', { exact: true }).count(), 0, 'liste des rôles fermée');
+  await page.locator('.grimoire-section').click({ position: { x: 5, y: 5 } });
   await shot('05-jour');
 });
 
@@ -722,6 +729,11 @@ await test('8 joueurs rejoignent le salon depuis 8 navigateurs', async () => {
   });
 });
 
+await test('le Conteur règle la durée du débat avant le début de la partie', async () => {
+  await host.locator('.debate-setting input').fill('2');
+  await until(async () => (await hostState()).debateMinutes === 2, 'durée enregistrée');
+});
+
 await test('un nom déjà pris est refusé', async () => {
   const twin = await openBrowser(`?room=${roomCode}`);
   await joinRoom(twin, 'alice');
@@ -769,6 +781,7 @@ await test('le salon se ferme dès que les rôles sont distribués', async () =>
 
 await test('la nuit, les joueurs ne peuvent écrire qu\'au Conteur, en privé', async () => {
   await hostStep('Les Sbires se réveillent');
+  assert.equal(await host.locator('.debate-setting').count(), 0, 'durée du débat figée une fois la partie commencée');
   await until(async () => seats.Chloé.locator('option[value="all"]').isDisabled(), 'discussion publique fermée');
   await say(seats.Chloé, 'Qui dois-je sonder ?');
   await until(async () => /Chloé \(privé\) : Qui dois-je sonder/.test(await text(host, '.chat-messages')), 'message privé reçu par le Conteur');
@@ -824,16 +837,73 @@ await test('les informations de nuit n\'arrivent qu\'au joueur concerné, sans r
   });
 });
 
-await test('le jour se lève pour tout le monde ; l\'exécution est visible de tous', async () => {
+const vote = (name, yes) => seats[name].locator(yes ? '.vote-yes' : '.vote-no').click();
+const nominateFrom = async (name, target) => {
+  await seat(seats[name], target).click();
+  await seats[name].getByRole('button', { name: `Nominer ${target}` }).click();
+};
+
+await test('le jour se lève pour tout le monde : débat chronométré et discussion publique', async () => {
   await host.getByRole('button', { name: '☀️ Nouvelle Journée' }).click();
-  await everyPlayer((p, name) => until(async () => /Jour 1/.test(await text(p, '.phase')), `jour 1 chez ${name}`));
+  await everyPlayer(async (p, name) => {
+    await until(async () => /Jour 1/.test(await text(p, '.phase')), `jour 1 chez ${name}`);
+    await until(async () => /^(2:00|1:5\d)$/.test(await text(p, '.day-panel .countdown')), `compte à rebours de 2 minutes chez ${name}`);
+    assert.equal(await p.getByRole('button', { name: /Nominer/ }).count(), 0, 'pas de nomination pendant le débat');
+  });
+  assert.match(await text(host, '.day-vote .countdown'), /^(2:00|1:5\d)$/);
+  const first = await text(seats.Alice, '.day-panel .countdown');
+  await until(async () => (await text(seats.Alice, '.day-panel .countdown')) !== first, 'le compte à rebours défile');
+
   await say(seats.Hugo, 'Je propose Emma');
   await until(async () => /Hugo : Je propose Emma/.test(await text(seats.Gaëlle, '.chat-messages')), 'discussion publique rouverte le jour');
+});
 
-  await host.locator('aside').getByRole('button', { name: 'Emma', exact: true }).click();
+await test('nomination et vote sur l\'écran de chaque joueur', async () => {
+  await host.getByRole('button', { name: 'Ouvrir les nominations' }).click();
+  await everyPlayer((p, name) => until(async () => /Nominations ouvertes · 4 voix nécessaires/.test(await text(p, '.day-panel')), `nominations ouvertes chez ${name}`));
+
+  await nominateFrom('Hugo', 'Emma');
+  await everyPlayer(async (p, name) => {
+    await until(async () => /Hugo nomine Emma/.test(await text(p, '.day-panel')), `nomination vue par ${name}`);
+    assert.equal(await p.locator('.vote-yes').count(), 1, `${name} peut voter`);
+  });
+  await shot('16-multi-vote', seats.Chloé);
+
+  for (const name of ['Hugo', 'Alice', 'Bruno', 'David', 'Farid']) await vote(name, true);
+  for (const name of ['Chloé', 'Gaëlle']) await vote(name, false);
+  await until(async () => /7\/8 ont voté/.test(await text(seats.Emma, '.day-panel')), 'décompte des votants');
+  // Les voix restent secrètes tant que le vote n'est pas clos
+  assert.equal(await seats.Emma.locator('.vote-result').count(), 0);
+  assert.match(await text(seats.Hugo, '.my-vote'), /Vous avez voté Oui/);
+  assert.equal(await seats.Hugo.locator('.vote-yes').count(), 0, 'un seul vote par joueur');
+
+  await vote('Emma', false);
+  await everyPlayer((p, name) => until(async () => /Emma : 5 voix \(Alice, Bruno, David, Farid, Hugo\) — condamné/.test(await text(p, '.day-panel')), `résultat chez ${name}`));
+  assert.match(await text(host, '.day-vote'), /Emma : 5 voix/);
+});
+
+await test('une nomination par joueur et par jour ; le plus de voix l\'emporte', async () => {
+  assert.match(await text(seats.Hugo, '.day-panel'), /déjà nominé/);
+  // Emma a déjà été nominée aujourd'hui : elle n'est plus sélectionnable
+  await seat(seats.Alice, 'Emma').click();
+  assert.ok(await seats.Alice.getByRole('button', { name: 'Nominer', exact: true }).isDisabled());
+
+  await nominateFrom('Alice', 'Bruno');
+  for (const name of ['Alice', 'Chloé', 'Gaëlle']) await vote(name, true);
+  for (const name of ['Bruno', 'David', 'Emma', 'Farid', 'Hugo']) await vote(name, false);
+  await everyPlayer(async (p, name) => {
+    await until(async () => /Bruno : 3 voix/.test(await text(p, '.day-panel')), `second résultat chez ${name}`);
+    assert.doesNotMatch(await text(p, '.day-panel'), /Bruno : 3 voix[^\n]*condamné/, '3 voix ne suffisent pas');
+  });
+  assert.match((await hostState()).nightLog[0].events[0].text, /Vote contre Bruno : 3 voix sur 4 nécessaires/);
+});
+
+await test('le Conteur exécute le condamné : tout le monde le voit', async () => {
+  await host.getByRole('button', { name: 'Exécuter Emma' }).click();
   await everyPlayer(async (p, name) => {
     await until(async () => (await seat(p, 'Emma').getAttribute('data-alive')) === 'false', `mort d'Emma vue par ${name}`);
     await until(async () => /Nuit 2/.test(await text(p, '.phase')), `nuit 2 chez ${name}`);
+    assert.equal(await p.locator('.day-panel').count(), 0);
   });
   assert.match(await text(seats.Emma, '.role-team'), /mort/);
 });
@@ -854,8 +924,42 @@ await test('une mort de nuit reste secrète jusqu\'au lever du jour', async () =
   await everyPlayer(async (p, name) => {
     assert.equal(await seat(p, 'Gaëlle').getAttribute('data-alive'), 'true', `${name} ne sait pas encore que Gaëlle est morte`);
   });
+  // Horloge du Conteur sous contrôle, pour faire défiler le débat du jour suivant
+  await host.clock.install();
   await host.getByRole('button', { name: '☀️ Nouvelle Journée' }).click();
   await everyPlayer((p, name) => until(async () => (await seat(p, 'Gaëlle').getAttribute('data-alive')) === 'false', `mort de Gaëlle annoncée à ${name}`));
+});
+
+await test('à la fin du débat, les nominations s\'ouvrent d\'elles-mêmes', async () => {
+  await until(async () => /^(2:00|1:5\d)$/.test(await text(seats.Farid, '.day-panel .countdown')), 'débat du jour 2');
+  await host.clock.fastForward(121000);
+  // 6 vivants : 3 voix nécessaires
+  await everyPlayer((p, name) => until(async () => /Nominations ouvertes · 3 voix nécessaires/.test(await text(p, '.day-panel')), `nominations ouvertes chez ${name}`));
+  assert.match(await text(seats.Emma, '.day-panel'), /Les morts ne nominent pas/);
+});
+
+await test('un mort ne dispose que d\'un seul vote pour le reste de la partie', async () => {
+  await nominateFrom('Alice', 'Bruno');
+  await until(async () => /unique vote/.test(await text(seats.Emma, '.day-panel')), 'rappel du vote de mort');
+  await vote('Emma', true);
+  await vote('Gaëlle', false);
+  for (const name of ['Alice', 'Chloé', 'Farid']) await vote(name, true);
+  for (const name of ['Bruno', 'David', 'Hugo']) await vote(name, false);
+  await until(async () => /Bruno : 4 voix \(Alice, Chloé, Emma, Farid\) — condamné/.test(await text(seats.Hugo, '.day-panel')), 'Bruno condamné');
+  assert.equal((await hostPlayer('Emma')).ghostUsed, true, 'Emma a dépensé son vote');
+  assert.equal((await hostPlayer('Gaëlle')).ghostUsed, false, 'un « Non » ne dépense pas le vote');
+
+  // Vote suivant : Emma ne peut plus voter, Gaëlle le peut encore ; le Conteur clôt sans attendre tout le monde
+  await nominateFrom('Chloé', 'David');
+  await until(async () => (await seats.Emma.locator('.no-vote').count()) === 1, 'Emma ne vote plus');
+  assert.equal(await seats.Emma.locator('.vote-yes').count(), 0);
+  assert.equal(await seats.Gaëlle.locator('.vote-yes').count(), 1);
+  await vote('Chloé', true);
+  await vote('Gaëlle', true);
+  await until(async () => /2\/7 ont voté/.test(await text(host, '.day-vote')), 'votes reçus par le Conteur');
+  await host.getByRole('button', { name: 'Clore le vote' }).click();
+  await until(async () => /David : 2 voix \(Chloé, Gaëlle\)/.test(await text(seats.Bruno, '.day-panel')), 'vote clos par le Conteur');
+  assert.match(await text(seats.Bruno, '.day-panel'), /Bruno : 4 voix[^\n]*condamné/, 'Bruno reste condamné');
 });
 
 await test('un joueur ou le Conteur qui recharge sa page retrouve la partie', async () => {
@@ -883,7 +987,7 @@ await test('le salon est fermé aux nouveaux joueurs une fois la partie lancée'
 });
 
 await test('fin de partie : tous les joueurs voient le vainqueur et les rôles', async () => {
-  await host.locator('aside').getByRole('button', { name: 'Bruno', exact: true }).click();
+  await host.getByRole('button', { name: 'Exécuter Bruno' }).click();
   await host.getByText('Victoire du Village !').waitFor();
   await everyPlayer(async (p, name) => {
     await until(async () => (await p.locator('.game-end').count()) === 1, `fin de partie chez ${name}`);

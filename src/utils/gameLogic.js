@@ -57,6 +57,7 @@ export const assignRoles = (players) => {
     ivre: false,
     master: false,
     used: false,
+    ghostUsed: false,
     notes: '',
     // Le Soûlard croit être un Villageois absent de la partie
     shownRole: rolePool[index]?.id === 'drunk' ? drunkBelief?.id ?? null : null,

@@ -32,6 +32,7 @@ function GrimoireSection({
     setSelectedPlayerId,
     roleAssigned,
     room = null,
+    roleLocked = false,
     multiplayer = false,
 }) {
     const selectedPlayer = players.find(p => p.id === selectedPlayerId);
@@ -295,6 +296,7 @@ function GrimoireSection({
                     onDrag={handleDrag}
                     style={{ /* positionnement */ }}
                     roleAssigned={roleAssigned}
+                    roleLocked={roleLocked}
                 />
             )}
         </section>

@@ -83,6 +83,8 @@ function Sidebar({
           onAssignRoles={onAssignRoles}
           setIsStarted={setIsStarted}
           multiplayer={!!multiplayer}
+          dayVote={multiplayer?.dayVote ?? null}
+          debate={multiplayer?.debate ?? null}
         />
       </div>
 

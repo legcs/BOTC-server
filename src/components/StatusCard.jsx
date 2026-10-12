@@ -12,6 +12,7 @@ function StatusCard({
   onDrag,
   style,
   roleAssigned,
+  roleLocked = false,
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -179,13 +180,17 @@ function StatusCard({
           }}>
             {player.name}
           </h3>
+          {/* Une fois la partie commencée, les rôles ne se modifient plus à la main */}
           <button
+            className="role-selector"
+            disabled={roleLocked}
+            title={roleLocked ? 'Les rôles sont verrouillés une fois la partie commencée' : 'Changer de rôle'}
             onClick={() => setShowRoleSelector(!showRoleSelector)}
             style={{
               background: 'none',
               border: 'none',
               color: colors.primary,
-              cursor: 'pointer',
+              cursor: roleLocked ? 'default' : 'pointer',
               fontFamily: 'inherit',
               fontSize: '0.95rem',
               padding: 0,
@@ -194,12 +199,12 @@ function StatusCard({
               gap: '0.3rem',
             }}
           >
-            {role?.name || 'Choisir rôle'} <span style={{ fontSize: '0.7rem' }}>▼</span>
+            {role?.name || 'Choisir rôle'} {!roleLocked && <span style={{ fontSize: '0.7rem' }}>▼</span>}
           </button>
         </div>
       </div>
 
-      {showRoleSelector && (
+      {showRoleSelector && !roleLocked && (
         <div style={{
           position: 'absolute',
           top: '7%',
