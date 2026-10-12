@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { allRoles, roles } from '../data/roles';
 import { getRoleCategory, getCategoryColor } from '../utils/roleUtils';
-import { assignRoles } from '../utils/gameLogic';
 
 function StatusCard({
   player,

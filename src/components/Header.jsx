@@ -9,7 +9,6 @@ function Header({
   isFullscreen,
   roleAssigned,
   restartGame,
-  completedActions,
   isStarted,
 }) {
   return (

@@ -40,7 +40,8 @@ export default function BotCStoryteller() {
   // ===== ÉTAT =====
   // Partie sauvegardée dans le navigateur (survit à un rechargement de la page)
   const [saved] = useState(loadGame);
-  const [players, setPlayers] = useState(saved?.players ?? []);
+  const [players, setPlayersState] = useState(saved?.players ?? []);
+  const playersRef = useRef(players);
   const [currentTime, setCurrentTime] = useState(saved?.currentTime ?? 'NUIT');
   const [currentNight, setCurrentNight] = useState(saved?.currentNight ?? 1);
   const [selectedPlayerId, setSelectedPlayerId] = useState(null);
@@ -52,11 +53,11 @@ export default function BotCStoryteller() {
   const [killedTonightId, setKilledTonightId] = useState(saved?.killedTonightId ?? null);
   const [executionToday, setExecutionToday] = useState(saved?.executionToday ?? false);
   const [completedActions, setCompletedActions] = useState(saved?.completedActions ?? []);
-  const [playerPositions, setPlayerPositions] = useState({});
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [gameOver, setGameOver] = useState(false);
-  const [winner, setWinner] = useState(null);
-  const [victoryReason, setVictoryReason] = useState('');
+  // Fin de partie déclarée par une règle ponctuelle (Saint, Maire)
+  const [forcedEnd, setForcedEnd] = useState(null);
+  // État des joueurs pour lequel le Conteur a refermé l'annonce de victoire
+  const [dismissedFor, setDismissedFor] = useState(null);
   const [activeAction, setActiveAction] = useState(null);
   const [selectedTargets, setSelectedTargets] = useState([]);
   const [showHelpModal, setShowHelpModal] = useState(false);
@@ -122,14 +123,22 @@ export default function BotCStoryteller() {
     };
   }, []);
 
-  // Replacer les tokens en cercle quand le grimoire change de taille ou que la liste
-  // des joueurs change (un token déplacé à la main garde sa place le reste du temps)
-  const playerIds = players.map(p => p.id).join(',');
-  useEffect(() => {
-    if (containerSize.width > 0 && containerSize.height > 0) {
-      setPlayerPositions(calculateCirclePositions(players, containerSize));
-    }
-  }, [playerIds, containerSize.width, containerSize.height]);
+  // Les tokens sont placés en cercle. Un token déplacé à la main garde sa place tant que
+  // le grimoire ne change pas de taille et que la liste des joueurs ne change pas.
+  const layoutKey = `${players.map(p => p.id).join(',')}|${containerSize.width}x${containerSize.height}`;
+  const [movedTokens, setMovedTokens] = useState({ layoutKey, positions: {} });
+  const circlePositions = calculateCirclePositions(players, containerSize);
+  const playerPositions = movedTokens.layoutKey === layoutKey
+    ? { ...circlePositions, ...movedTokens.positions }
+    : circlePositions;
+  const setPlayerPositions = (update) => setMovedTokens(prev => {
+    const current = prev.layoutKey === layoutKey ? { ...circlePositions, ...prev.positions } : circlePositions;
+    return { layoutKey, positions: typeof update === 'function' ? update(current) : update };
+  });
+
+  // Conditions de victoire permanentes, recalculées à chaque changement des joueurs
+  const victory = roleAssigned && players.length > 0 ? getVictory(players) : null;
+  const gameEnd = forcedEnd ?? victory;
 
   useEffect(() => {
     saveGame({
@@ -148,14 +157,23 @@ export default function BotCStoryteller() {
 
 
   // ===== HANDLERS =====
+  // Toute modification des joueurs passe par ici : si le Démon vient de mourir
+  // et que la Confidente peut lui succéder, elle devient aussitôt le nouveau Démon.
+  const setPlayers = (update) => {
+    const next = typeof update === 'function' ? update(playersRef.current) : update;
+    const succession = roleAssigned && !gameEnd ? resolveDemonDeath(next) : null;
+    playersRef.current = succession?.players ?? next;
+    setPlayersState(playersRef.current);
+    if (succession) addNightEvent(succession.event);
+  };
+
   const updatePlayer = (playerId, updates) => {
     setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, ...updates } : p));
   };
 
   const endGame = (gameWinner, reason) => {
-    setGameOver(true);
-    setWinner(gameWinner);
-    setVictoryReason(reason);
+    setForcedEnd({ winner: gameWinner, reason });
+    setDismissedFor(null);
   };
 
   const addPlayer = () => {
@@ -198,7 +216,7 @@ export default function BotCStoryteller() {
       ? `👺 ${player.name} (Démon) est exécuté`
       : `💀 ${player.name} (${getRoleName(player.role)}) est exécuté`);
 
-    // Si l'exécution termine la partie, on reste sur le jour : l'effet annonce la victoire
+    // Si l'exécution termine la partie, on reste sur le jour pour annoncer la victoire
     const settled = resolveDemonDeath(afterExecution)?.players ?? afterExecution;
     if (getVictory(settled)) {
       setPlayers(afterExecution);
@@ -299,9 +317,8 @@ export default function BotCStoryteller() {
     setIsStarted(false);
     setPlayers(players.map(p => ({ ...p, ...defaultPlayerState })));
     setRoleAssigned(false);
-    setGameOver(false);
-    setWinner(null);
-    setVictoryReason('');
+    setForcedEnd(null);
+    setDismissedFor(null);
     setSelectedPlayerId(null);
   };
 
@@ -419,23 +436,6 @@ export default function BotCStoryteller() {
     e.dataTransfer.dropEffect = 'move';
   };
 
-  // Succession du Démon et conditions de victoire après chaque changement
-  useEffect(() => {
-    if (!roleAssigned || gameOver || players.length === 0) return;
-
-    const succession = resolveDemonDeath(players);
-    if (succession) {
-      setPlayers(succession.players);
-      addNightEvent(succession.event);
-      return;
-    }
-
-    const victory = getVictory(players);
-    if (victory) {
-      endGame(victory.winner, victory.reason);
-    }
-  }, [players]);
-
   // ===== RENDER =====
   return (
     <div style={{
@@ -470,7 +470,6 @@ export default function BotCStoryteller() {
         isFullscreen={isFullscreen}
         roleAssigned={roleAssigned}
         restartGame={restartGame}
-        completedActions={completedActions}
         isStarted={isStarted}
       />
 
@@ -497,10 +496,8 @@ export default function BotCStoryteller() {
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           onSelectPlayer={setSelectedPlayerId}
-          onSelectTarget={handleTokenClickDuringAction}
           onUpdatePlayer={updatePlayer}
           onRemovePlayer={removePlayer}
-          onAddPlayer={addPlayer}
           onShowAddPlayer={setShowAddPlayer}
           onSetNewPlayerName={setNewPlayerName}
           setDraggingPlayerId={setDraggingPlayerId}
@@ -545,12 +542,15 @@ export default function BotCStoryteller() {
         <HelpModal onClose={() => setShowHelpModal(false)} />
       )}
 
-      {gameOver && (
+      {gameEnd && dismissedFor !== players && (
         <VictoryModal
-          winner={winner}
-          reason={victoryReason}
+          winner={gameEnd.winner}
+          reason={gameEnd.reason}
           onRestart={restartGame}
-          onClose={() => setGameOver(false)}
+          onClose={() => {
+            setForcedEnd(null);
+            setDismissedFor(players);
+          }}
         />
       )}
     </div>

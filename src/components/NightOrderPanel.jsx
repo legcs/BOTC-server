@@ -45,7 +45,7 @@ function NightOrderPanel({
         const isActive = isStepActive(step);
         const actionKey = `${step.role || 'special'}-${index}`;
         const isCompleted = completedActions.includes(actionKey);
-        const actionType = step.role ? getActionType(step.role) : 'none';
+        const actionType = step.type ?? (step.role ? getActionType(step.role) : 'none');
 
         return (
           <div
@@ -189,7 +189,7 @@ function NightOrderPanel({
           const isActive = isStepActive(step);
           const actionKey = `${step.role || 'special'}-${index}`;
           const isCompleted = completedActions.includes(actionKey);
-          const actionType = step.role ? getActionType(step.role) : 'none';
+          const actionType = step.type ?? (step.role ? getActionType(step.role) : 'none');
 
           return (
             <div

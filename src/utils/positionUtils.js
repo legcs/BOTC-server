@@ -20,9 +20,9 @@ export const calculateNewPlayerPosition = (players, playerPositions, containerSi
   const spacing = tokenSize * 1.2;
   const x = marginFromEdge;
   
-  const leftColumnPlayers = Object.entries(playerPositions)
-    .filter(([_, pos]) => pos && pos.x < containerSize.width / 3)
-    .map(([_, pos]) => pos.y);
+  const leftColumnPlayers = Object.values(playerPositions)
+    .filter((pos) => pos && pos.x < containerSize.width / 3)
+    .map((pos) => pos.y);
   
   let y;
   if (leftColumnPlayers.length === 0) {

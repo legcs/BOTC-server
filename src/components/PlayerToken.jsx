@@ -4,7 +4,6 @@ import { getRoleCategory, getCategoryColor } from '../utils/roleUtils';
 
 function PlayerToken({
   player,
-  index,
   totalPlayers,
   onSelect,
   isSelected,
@@ -63,7 +62,7 @@ function PlayerToken({
     }));
   };
 
-  const handleTouchEnd = (e) => {
+  const handleTouchEnd = () => {
     if (draggingPlayerId !== player.id) {
       // Si on n'est pas en train de déplacer le token, déclencher la sélection après un délai
       setTimeout(() => {

@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import PlayerToken from './PlayerToken';
 import StatusCard from './StatusCard';
 
@@ -20,10 +20,8 @@ function GrimoireSection({
     onDrop,
     onDragOver,
     onSelectPlayer,
-    onSelectTarget,
     onUpdatePlayer,
     onRemovePlayer,
-    onAddPlayer,
     onShowAddPlayer,
     onSetNewPlayerName,
     setDraggingPlayerId,
@@ -44,17 +42,6 @@ function GrimoireSection({
         }); 
     };
 
-    // Initialise cardPositions pour chaque joueur lors de la sélection
-    useEffect(() => {
-    if (selectedPlayer && !cardPosition.position) {
-        setCardPosition({
-            position: {
-                x: window.innerWidth / 2 - 160,
-                y: window.innerHeight / 2 - 200,
-            },
-        });
-    }
-    }, [selectedPlayer, cardPosition]);
 
 
 
@@ -139,7 +126,7 @@ function GrimoireSection({
             </div>
 
             {/* Tokens des joueurs */}
-            {players.map((player, index) => {
+            {players.map((player) => {
                 let isTargetable = false;
 
                 if (activeAction) {
@@ -159,7 +146,6 @@ function GrimoireSection({
                     <PlayerToken
                         key={player.id}
                         player={player}
-                        index={index}
                         totalPlayers={players.length}
                         onSelect={activeAction ? handleTokenClickDuringAction : (id) => setSelectedPlayerId(id === selectedPlayerId ? null : id)}
                         isSelected={player.id === selectedPlayerId && !activeAction}

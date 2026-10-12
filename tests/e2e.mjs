@@ -192,7 +192,7 @@ const playPhase = async (phase, { skip = [], onSelected = {} } = {}) => {
     assert.equal(active, expectedActive, `étape « ${step.action} » active`);
     if (!active || skip.includes(step.role)) continue;
 
-    const targets = SELECT_ROLES.includes(step.role) ? chooseTargets(step.role, st) : [];
+    const targets = SELECT_ROLES.includes(step.role) && step.type !== 'none' ? chooseTargets(step.role, st) : [];
     await playStep(step.action, targets, onSelected[step.role]);
     const after = await state();
     assert.equal(after.completedActions.length, st.completedActions.length + 1, `étape « ${step.action} » terminée`);
@@ -243,6 +243,35 @@ await test('distribution des rôles conforme à la répartition officielle', asy
   await shot('02-roles');
 });
 
+await test('un jeton déplacé à la main garde sa place', async () => {
+  // Centre du jeton (sa taille varie au survol)
+  const center = async (name) => {
+    const box = await token(name).boundingBox();
+    return { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) };
+  };
+  const near = (a, b) => Math.abs(a.x - b.x) <= 2 && Math.abs(a.y - b.y) <= 2;
+  const before = await center('Farid');
+  await token('Farid').dragTo(page.locator('.grimoire-section'), { targetPosition: { x: 120, y: 150 } });
+  await settle();
+  const moved = await center('Farid');
+  assert.ok(Math.abs(moved.x - 120) <= 5 && Math.abs(moved.y - before.y) > 50, 'jeton déplacé');
+  await token('Alice').click();
+  await page.locator('.grimoire-section').click({ position: { x: 5, y: 5 } });
+  await settle();
+  assert.ok(near(await center('Farid'), moved), 'position conservée après d\'autres actions');
+  // Les positions manuelles valent pour une taille de grimoire donnée
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await settle();
+  assert.ok(!near(await center('Farid'), moved), 'replacé en cercle quand le grimoire change de taille');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await settle();
+  assert.ok(near(await center('Farid'), moved), 'position retrouvée à la taille d\'origine');
+  // Les positions ne sont pas sauvegardées : un rechargement remet les jetons en cercle
+  await page.reload();
+  await ready('.player-token');
+  assert.ok(near(await center('Farid'), before), 'cercle après rechargement');
+});
+
 await test('fiche d\'un joueur : notes et statuts', async () => {
   await token('Alice').click();
   const notes = page.getByPlaceholder('Informations, rappels...');
@@ -264,10 +293,11 @@ await test('fiche d\'un joueur : notes et statuts', async () => {
 
 await test('première nuit : chaque rôle en jeu agit dans l\'ordre', async () => {
   await playPhase('first', {
-    skip: ['imp'],
     onSelected: { fortuneteller: () => shot('04-action-voyante') },
   });
   const st = await state();
+  assert.ok(st.players.every((p) => p.alive), 'personne ne meurt la première nuit');
+  assert.match(await journal(), /Le Démon découvre qui sont les Sbires/);
   if (st.players.some((p) => p.role === 'poisoner')) {
     assert.equal(st.players.filter((p) => p.poisoned).length, 1, 'un joueur empoisonné');
   }
@@ -370,6 +400,15 @@ await page.context().close();
 // ===== RÈGLES DU JEU =====
 console.log('\nRègles du jeu');
 await newPage();
+
+await test('le Démon ne tue pas la première nuit', async () => {
+  await loadGame(['imp', 'chef', 'empath', 'poisoner', 'mayor'], { currentNight: 1, nightLog: [{ night: 1, events: [] }], isStarted: false });
+  await playStep(nightOrder.first.find((s) => s.role === 'imp').action);
+  assert.equal(await page.getByText('Sélectionnez').count(), 0, 'aucune cible demandée');
+  const st = await state();
+  assert.ok(st.players.every((p) => p.alive));
+  assert.equal(st.completedActions.length, 1);
+});
 
 await test('le Moine protège sa cible de l\'attaque du Démon', async () => {
   await loadGame(['imp', 'monk', 'chef', 'empath', 'poisoner', 'saint']);

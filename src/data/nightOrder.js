@@ -12,6 +12,8 @@ export const nightOrder = {
     },
     { 
       role: 'imp', 
+      // Simple information : le Démon ne tue pas la première nuit
+      type: 'none',
       action: 'Le Démon découvre qui sont les Sbires et apprend 3 rôles non en jeu',
       description: 'Le Conteur montre au Démon qui sont ses Sbires, puis lui montre 3 jetons de rôles qui ne sont PAS en jeu (pour qu\'il puisse bluffer).',
       order: 2
